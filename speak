@@ -323,11 +323,11 @@ tts_one_chunk() {
   local voice="$3"
   local model="$4"
   local api_key="$5"
-  local use_cloud="${6:-false}"
+  local use_gcloud="${6:-false}"
 
-  if [[ "$use_cloud" == "true" ]]; then
-    local access_token="${CLOUD_ACCESS_TOKEN:-}"
-    local gcp_project="${CLOUD_PROJECT:-}"
+  if [[ "$use_gcloud" == "true" ]]; then
+    local access_token="${GCLOUD_ACCESS_TOKEN:-}"
+    local gcp_project="${GCLOUD_PROJECT:-}"
 
     if [[ -z "$access_token" ]]; then
       access_token=$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || echo "")
@@ -468,7 +468,7 @@ cmd_speak() {
   local show_mode=""
   local fast=false
   local tts_model="$DEFAULT_MODEL"
-  local use_cloud="$DEFAULT_USE_CLOUD"
+  local use_gcloud="$DEFAULT_USE_GCLOUD"
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -481,8 +481,8 @@ cmd_speak() {
       --stdout) use_stdout=true; play=false; quiet=true; shift ;;
       --json) json_out=true; play=false; quiet=true; shift ;;
       -f|--fast) fast=true; shift ;;
-      -g|--cloud) use_cloud=true; shift ;;
-      --no-cloud) use_cloud=false; shift ;;
+      -g|--gcloud) use_gcloud=true; shift ;;
+      --no-gcloud) use_gcloud=false; shift ;;
       -s|--show)
         # Optional arg: wave or spec. If next arg doesn't look like a mode, default to wave.
         case "${2:-}" in
@@ -511,7 +511,7 @@ cmd_speak() {
   fi
 
   # Pre-resolve Google Cloud credentials if using Cloud TTS
-  if [[ "$use_cloud" == "true" ]]; then
+  if [[ "$use_gcloud" == "true" ]]; then
     local access_token
     access_token=$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || echo "")
     if [[ -z "$access_token" ]]; then
@@ -519,14 +519,14 @@ cmd_speak() {
       echo -e "${DIM}Please run: gcloud auth application-default login${RESET}" >&2
       exit 1
     fi
-    export CLOUD_ACCESS_TOKEN="$access_token"
+    export GCLOUD_ACCESS_TOKEN="$access_token"
 
     local gcp_project
     gcp_project=$(gcloud config get-value project 2>/dev/null || echo "")
     if [[ -z "$gcp_project" ]]; then
       gcp_project="g-drive-474022"
     fi
-    export CLOUD_PROJECT="$gcp_project"
+    export GCLOUD_PROJECT="$gcp_project"
   fi
 
   # Get input text
@@ -555,7 +555,7 @@ cmd_speak() {
     exit 1
   fi
 
-  if [[ "$use_cloud" == "false" || "$raw" == "false" ]]; then
+  if [[ "$use_gcloud" == "false" || "$raw" == "false" ]]; then
     if [[ -z "${GEMINI_API_KEY:-}" ]]; then
       err "GEMINI_API_KEY not set"
       echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"${RESET}" >&2
@@ -567,8 +567,8 @@ cmd_speak() {
   header
   echo -ne "  ${GRAY}voice${RESET}  " >&2
   print_voice_badge "$voice" >&2
-  if [[ "$use_cloud" == "true" ]]; then
-    echo -ne "  ${BLUE}cloud${RESET}" >&2
+  if [[ "$use_gcloud" == "true" ]]; then
+    echo -ne "  ${BLUE}gcloud${RESET}" >&2
   fi
   if [[ "$raw" == true ]]; then
     echo -ne "  ${YELLOW}raw${RESET}" >&2
@@ -686,7 +686,7 @@ except: print('?/?')
         local chunk_wav="${tmpdir}/chunk_${i}.wav"
         chunk_files+=("$chunk_wav")
 
-        tts_one_chunk "$chunk" "$chunk_wav" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_cloud" &
+        tts_one_chunk "$chunk" "$chunk_wav" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_gcloud" &
         batch_pids+=($!)
       done
 
@@ -764,7 +764,7 @@ except: print('?/?')
     # Single-chunk mode (refactored to call tts_one_chunk directly)
     echo -ne "  ${GRAY}generating audio...${RESET}" >&2
 
-    if ! tts_one_chunk "$transcript" "$wav_file" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_cloud"; then
+    if ! tts_one_chunk "$transcript" "$wav_file" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_gcloud"; then
       local err_msg="TTS generation failed"
       if [[ -f "${wav_file}.err" ]]; then
         err_msg=$(cat "${wav_file}.err")
