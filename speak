@@ -1,0 +1,803 @@
+#!/usr/bin/env bash
+# speak — Gemini-powered text-to-speech with narration intelligence
+# https://github.com/haroldyoung/speak
+set -euo pipefail
+
+VERSION="0.1.0"
+CONFIG_DIR="${HOME}/.config/speak"
+CONFIG_FILE="${CONFIG_DIR}/config"
+API_BASE="https://generativelanguage.googleapis.com/v1beta/models"
+
+# ── Terminal formatting ──────────────────────────────────────────────
+BOLD='\033[1m'
+DIM='\033[2m'
+ITALIC='\033[3m'
+RESET='\033[0m'
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+BLUE='\033[34m'
+MAGENTA='\033[35m'
+CYAN='\033[36m'
+WHITE='\033[37m'
+GRAY='\033[90m'
+BG_BLACK='\033[40m'
+
+# Disable colors if not a terminal
+if [[ ! -t 2 ]]; then
+  BOLD="" DIM="" ITALIC="" RESET="" RED="" GREEN="" YELLOW=""
+  BLUE="" MAGENTA="" CYAN="" WHITE="" GRAY="" BG_BLACK=""
+fi
+
+# ── Voice registry ───────────────────────────────────────────────────
+# Each voice: name|style|seed_color|glyph
+VOICES=(
+  "Zephyr|Bright|36|◇"
+  "Puck|Upbeat|33|◆"
+  "Charon|Informative|34|▣"
+  "Kore|Firm|35|◈"
+  "Fenrir|Excitable|31|△"
+  "Leda|Youthful|36|○"
+  "Orus|Firm|34|▪"
+  "Aoede|Breezy|32|◎"
+  "Callirrhoe|Easy-going|33|◌"
+  "Autonoe|Bright|36|◊"
+  "Enceladus|Breathy|35|◦"
+  "Iapetus|Clear|34|▫"
+  "Umbriel|Easy-going|32|◍"
+  "Algieba|Smooth|33|●"
+  "Despina|Smooth|35|◐"
+  "Erinome|Clear|36|◑"
+  "Algenib|Gravelly|31|▲"
+  "Rasalgethi|Informative|34|◒"
+  "Laomedeia|Upbeat|33|◓"
+  "Achernar|Soft|35|◔"
+  "Alnilam|Firm|31|◕"
+  "Schedar|Even|34|◖"
+  "Gacrux|Mature|32|◗"
+  "Pulcherrima|Forward|35|◘"
+  "Achird|Friendly|33|◙"
+  "Zubenelgenubi|Casual|32|◚"
+  "Vindemiatrix|Gentle|35|◛"
+  "Sadachbia|Lively|33|◜"
+  "Sadaltager|Knowledgeable|34|◝"
+  "Sulafat|Warm|31|◞"
+)
+
+# ── Config management ────────────────────────────────────────────────
+load_config() {
+  DEFAULT_VOICE="Puck"
+  DEFAULT_MODEL="gemini-3.1-flash-tts-preview"
+  DEFAULT_OPTIMIZE_MODEL="gemini-2.5-flash"
+  if [[ -f "$CONFIG_FILE" ]]; then
+    while IFS='=' read -r key value; do
+      [[ -z "$key" || "$key" == \#* ]] && continue
+      key=$(echo "$key" | xargs)
+      value=$(echo "$value" | xargs)
+      case "$key" in
+        voice) DEFAULT_VOICE="$value" ;;
+        tts_model) DEFAULT_MODEL="$value" ;;
+        optimize_model) DEFAULT_OPTIMIZE_MODEL="$value" ;;
+      esac
+    done < "$CONFIG_FILE"
+  fi
+}
+
+save_config_value() {
+  mkdir -p "$CONFIG_DIR"
+  local key="$1" value="$2"
+  if [[ -f "$CONFIG_FILE" ]] && grep -q "^${key}=" "$CONFIG_FILE" 2>/dev/null; then
+    sed -i '' "s|^${key}=.*|${key}=${value}|" "$CONFIG_FILE"
+  else
+    echo "${key}=${value}" >> "$CONFIG_FILE"
+  fi
+}
+
+# ── Voice lookup ─────────────────────────────────────────────────────
+get_voice_entry() {
+  local name="$1"
+  for v in "${VOICES[@]}"; do
+    local vname="${v%%|*}"
+    if [[ "$(tolower "$vname")" == "$(tolower "$name")" ]]; then
+      echo "$v"
+      return 0
+    fi
+  done
+  return 1
+}
+
+print_voice_badge() {
+  local name="$1"
+  local entry
+  if entry=$(get_voice_entry "$name"); then
+    IFS='|' read -r vname vstyle vcolor vglyph <<< "$entry"
+    printf "\033[${vcolor}m${vglyph} ${vname}\033[0m"
+  else
+    printf "$name"
+  fi
+}
+
+# ── Display functions ────────────────────────────────────────────────
+header() {
+  echo -e "${BOLD}${CYAN}speak${RESET} ${DIM}v${VERSION}${RESET}" >&2
+}
+
+label() {
+  echo -ne "${GRAY}$1${RESET}" >&2
+}
+
+info() {
+  echo -e "${DIM}$1${RESET}" >&2
+}
+
+err() {
+  echo -e "${RED}✗ $1${RESET}" >&2
+}
+
+# ── Subcommands ──────────────────────────────────────────────────────
+cmd_voices() {
+  header
+  echo "" >&2
+  echo -e "${BOLD}Available voices${RESET}" >&2
+  echo -e "${DIM}──────────────────────────────────${RESET}" >&2
+  for v in "${VOICES[@]}"; do
+    IFS='|' read -r vname vstyle vcolor vglyph <<< "$v"
+    local marker=""
+    if [[ "$(tolower "$vname")" == "$(tolower "$DEFAULT_VOICE")" ]]; then
+      marker=" ${GREEN}← default${RESET}"
+    fi
+    printf "  \033[${vcolor}m${vglyph}  %-16s\033[0m ${DIM}%s${RESET}%b\n" "$vname" "$vstyle" "$marker" >&2
+  done
+  echo "" >&2
+  echo -e "${DIM}Set default: speak set voice <name>${RESET}" >&2
+}
+
+cmd_set() {
+  if [[ $# -lt 2 ]]; then
+    header
+    echo "" >&2
+    echo -e "${BOLD}Current config${RESET} ${DIM}(${CONFIG_FILE})${RESET}" >&2
+    echo -e "${DIM}──────────────────────────────────${RESET}" >&2
+    echo -ne "  voice           " >&2; print_voice_badge "$DEFAULT_VOICE" >&2; echo "" >&2
+    echo -e "  tts_model       ${DIM}${DEFAULT_MODEL}${RESET}" >&2
+    echo -e "  optimize_model  ${DIM}${DEFAULT_OPTIMIZE_MODEL}${RESET}" >&2
+    echo "" >&2
+    return
+  fi
+  local key="$1" value="$2"
+  case "$key" in
+    voice)
+      if ! get_voice_entry "$value" >/dev/null; then
+        err "Unknown voice: $value"
+        echo -e "${DIM}Run 'speak voices' to see options${RESET}" >&2
+        exit 1
+      fi
+      # Normalize capitalization
+      local entry
+      entry=$(get_voice_entry "$value")
+      value="${entry%%|*}"
+      save_config_value "voice" "$value"
+      echo -ne "${GREEN}✓${RESET} Default voice set to " >&2
+      print_voice_badge "$value" >&2
+      echo "" >&2
+      ;;
+    tts_model|optimize_model)
+      save_config_value "$key" "$value"
+      echo -e "${GREEN}✓${RESET} ${key} set to ${BOLD}${value}${RESET}" >&2
+      ;;
+    *)
+      err "Unknown config key: $key"
+      echo -e "${DIM}Valid keys: voice, tts_model, optimize_model${RESET}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_help() {
+  cat <<EOF
+
+$(echo -e "${BOLD}${CYAN}speak${RESET} ${DIM}v${VERSION}${RESET}")  Gemini-powered text-to-speech with narration intelligence
+
+$(echo -e "${BOLD}USAGE${RESET}")
+    speak [options] [text]         Narrate text (optimizes, then speaks)
+    speak voices                  List available voices
+    speak set [key] [value]       View or change configuration
+
+$(echo -e "${BOLD}OPTIONS${RESET}")
+    -v, --voice VOICE             Voice name (default: ${DEFAULT_VOICE})
+    -r, --raw                     Skip narration optimization, send text directly
+    -c, --clipboard               Read text from clipboard
+    -o, --output FILE             Save .wav file instead of playing
+    -q, --quiet                   Suppress narration transcript display
+    -f, --fast                    Use faster 2.5 Flash TTS model
+    -s, --show [MODE]             Play with visual display (wave or spec)
+        --stdout                  Write WAV audio to stdout (for piping)
+        --json                    Output JSON metadata + base64 audio to stdout
+        --help                    Show this help
+        --version                 Show version
+
+$(echo -e "${BOLD}EXAMPLES${RESET}")
+    speak "Hello world"
+    speak -c                      Speak clipboard contents
+    speak -v Kore -c              Speak clipboard with Kore voice
+    speak -r "Already tagged [whispers] text"
+    speak -o narrated.wav < chapter.txt
+    cat essay.md | speak -v Charon -o essay.wav
+    speak set voice Kore          Change default voice
+    speak voices                  Browse all 30 voices
+    speak -s "check this"         Play with waveform display
+    speak --show spec "text"      Play with spectrogram display
+    speak --stdout "hello" | mpv - Pipe audio to another process
+    speak --json "hello" | jq .duration_seconds  Get metadata as JSON
+
+$(echo -e "${BOLD}AUDIO TAGS${RESET}")  $(echo -e "${DIM}(used by the optimizer or manually with -r)${RESET}")
+    [whispers]  [excited]  [serious]  [warmly]  [slowly]
+    [laughs]    [sighs]    [pause]    [shouting] [sarcastic]
+
+$(echo -e "${BOLD}ENVIRONMENT${RESET}")
+    GEMINI_API_KEY                Required. Your Gemini API key.
+
+$(echo -e "${BOLD}CONFIG${RESET}")  $(echo -e "${DIM}(~/.config/speak/config)${RESET}")
+    voice=Puck                    Default voice
+    tts_model=gemini-3.1-flash-tts-preview
+    optimize_model=gemini-2.5-flash
+
+EOF
+}
+
+# ── JSON helper ──────────────────────────────────────────────────────
+tolower() { printf "%s" "$1" | tr "[:upper:]" "[:lower:]"; }
+json_escape() {
+  printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+}
+
+# ── Text chunking ────────────────────────────────────────────────────
+CHUNK_MAX_WORDS=500
+
+chunk_text() {
+  # Split text into chunks at paragraph boundaries, keeping under CHUNK_MAX_WORDS
+  local text="$1"
+  python3 -c "
+import sys, json
+
+text = sys.argv[1]
+max_words = int(sys.argv[2])
+
+# Split on double newlines (paragraphs)
+paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+
+chunks = []
+current_chunk = []
+current_words = 0
+
+for para in paragraphs:
+    para_words = len(para.split())
+    # If a single paragraph exceeds max, split it by sentences
+    if para_words > max_words:
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', para)
+        for sent in sentences:
+            sent_words = len(sent.split())
+            if current_words + sent_words > max_words and current_chunk:
+                chunks.append('\n\n'.join(current_chunk))
+                current_chunk = [sent]
+                current_words = sent_words
+            else:
+                current_chunk.append(sent)
+                current_words += sent_words
+    elif current_words + para_words > max_words and current_chunk:
+        chunks.append('\n\n'.join(current_chunk))
+        current_chunk = [para]
+        current_words = para_words
+    else:
+        current_chunk.append(para)
+        current_words += para_words
+
+if current_chunk:
+    chunks.append('\n\n'.join(current_chunk))
+
+# Output as JSON array
+print(json.dumps(chunks))
+" "$text" "$CHUNK_MAX_WORDS"
+}
+
+# Generate TTS for a single chunk, save WAV to given path
+tts_one_chunk() {
+  local chunk_text="$1"
+  local wav_path="$2"
+  local voice="$3"
+  local model="$4"
+  local api_key="$5"
+
+  local escaped
+  escaped=$(json_escape "$chunk_text")
+
+  local response
+  response=$(curl -s "${API_BASE}/${model}:generateContent" \
+    -H "x-goog-api-key: ${api_key}" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"contents\": [{
+        \"parts\": [{\"text\": ${escaped}}]
+      }],
+      \"generationConfig\": {
+        \"responseModalities\": [\"AUDIO\"],
+        \"speechConfig\": {
+          \"voiceConfig\": {
+            \"prebuiltVoiceConfig\": {
+              \"voiceName\": \"${voice}\"
+            }
+          }
+        }
+      }
+    }")
+
+  local audio_data
+  audio_data=$(echo "$response" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    audio = data['candidates'][0]['content']['parts'][0]['inlineData']['data']
+    print(audio, end='')
+except (KeyError, IndexError):
+    msg = data.get('candidates', [{}])[0].get('finishMessage', 'unknown error')
+    print('CHUNK_ERROR:' + msg, end='')
+") || { echo "CHUNK_ERROR:curl_failed"; return 1; }
+
+  if [[ "$audio_data" == CHUNK_ERROR:* ]]; then
+    echo "${audio_data}" > "${wav_path}.err"
+    return 1
+  fi
+
+  local pcm_path="${wav_path%.wav}.pcm"
+  echo "$audio_data" | base64 --decode > "$pcm_path"
+  ffmpeg -y -loglevel error -f s16le -ar 24000 -ac 1 -i "$pcm_path" "$wav_path"
+  rm -f "$pcm_path"
+
+  # Write token info
+  echo "$response" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    u = data.get('usageMetadata', {})
+    print(f\"{u.get('promptTokenCount', 0)},{u.get('candidatesTokenCount', 0)}\")
+except: print('0,0')
+" > "${wav_path}.tokens" 2>/dev/null
+}
+
+
+# ── Main speak logic ─────────────────────────────────────────────────
+cmd_speak() {
+  local voice="$DEFAULT_VOICE"
+  local raw=false
+  local clipboard=false
+  local output=""
+  local play=true
+  local quiet=false
+  local use_stdout=false
+  local json_out=false
+  local show_mode=""
+  local fast=false
+  local tts_model="$DEFAULT_MODEL"
+
+  # Parse options
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -v|--voice) voice="$2"; shift 2 ;;
+      -r|--raw) raw=true; shift ;;
+      -c|--clipboard) clipboard=true; shift ;;
+      -o|--output) output="$2"; play=false; shift 2 ;;
+      -q|--quiet) quiet=true; shift ;;
+      --stdout) use_stdout=true; play=false; quiet=true; shift ;;
+      --json) json_out=true; play=false; quiet=true; shift ;;
+      -f|--fast) fast=true; shift ;;
+      -s|--show)
+        # Optional arg: wave or spec. If next arg doesn't look like a mode, default to wave.
+        case "${2:-}" in
+          wave|waveform|spec|spectrogram) show_mode="$2"; shift 2 ;;
+          *) show_mode="wave"; shift ;;
+        esac ;;
+      --) shift; break ;;
+      -*) err "Unknown option: $1"; echo -e "${DIM}Run 'speak --help'${RESET}" >&2; exit 1 ;;
+      *) break ;;
+    esac
+  done
+
+  # Validate voice
+  local voice_entry
+  if ! voice_entry=$(get_voice_entry "$voice"); then
+    err "Unknown voice: $voice"
+    echo -e "${DIM}Run 'speak voices' to see options${RESET}" >&2
+    exit 1
+  fi
+  # Normalize voice name
+  voice="${voice_entry%%|*}"
+
+  # Fast mode: use 2.5 Flash TTS
+  if [[ "$fast" == true ]]; then
+    tts_model="gemini-2.5-flash-preview-tts"
+  fi
+
+  # Get input text
+  local input_text=""
+  if [[ "$clipboard" == true ]]; then
+    if command -v pbpaste &>/dev/null; then
+      input_text="$(pbpaste)"
+    elif command -v xclip &>/dev/null; then
+      input_text="$(xclip -selection clipboard -o)"
+    elif command -v xsel &>/dev/null; then
+      input_text="$(xsel --clipboard)"
+    elif command -v wl-paste &>/dev/null; then
+      input_text="$(wl-paste)"
+    else
+      err "No clipboard tool found (pbpaste, xclip, xsel, wl-paste)"
+      exit 1
+    fi
+  elif [[ $# -gt 0 ]]; then
+    input_text="$*"
+  else
+    input_text="$(cat)"
+  fi
+
+  if [[ -z "$input_text" ]]; then
+    err "No input text provided"
+    exit 1
+  fi
+
+  if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+    err "GEMINI_API_KEY not set"
+    echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"${RESET}" >&2
+    exit 1
+  fi
+
+  # Display header
+  header
+  echo -ne "  ${GRAY}voice${RESET}  " >&2
+  print_voice_badge "$voice" >&2
+  if [[ "$raw" == true ]]; then
+    echo -ne "  ${YELLOW}raw${RESET}" >&2
+  fi
+  if [[ "$fast" == true ]]; then
+    echo -ne "  ${CYAN}fast${RESET}" >&2
+  fi
+  echo "" >&2
+
+  local transcript=""
+  local optimize_tokens=""
+
+  # Step 1: Narration optimization
+  if [[ "$raw" == false ]]; then
+    echo -ne "  ${GRAY}optimizing...${RESET}" >&2
+
+    local combined_text="You are a narration director. Given the following text, produce an optimized transcript for text-to-speech narration by a single speaker.
+
+Rules:
+- Keep ALL original content and meaning intact. Do not summarize or cut.
+- Add audio tags in square brackets where they improve delivery: [pause], [slowly], [excited], [whispers], [serious], [warmly], etc.
+- Add natural pacing cues.
+- If the text is prose or an article, add a brief style and pace direction at the top.
+- Output ONLY the optimized transcript. No explanations, no markdown fences.
+
+TEXT TO OPTIMIZE:
+${input_text}"
+
+    local escaped_combined
+    escaped_combined=$(json_escape "$combined_text")
+
+    local narration_response
+    narration_response=$(curl -s "${API_BASE}/${DEFAULT_OPTIMIZE_MODEL}:generateContent" \
+      -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"contents\": [{
+          \"parts\": [{\"text\": ${escaped_combined}}]
+        }],
+        \"generationConfig\": {
+          \"temperature\": 0.7
+        }
+      }")
+
+    transcript=$(echo "$narration_response" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    text = data['candidates'][0]['content']['parts'][0]['text']
+    print(text)
+except (KeyError, IndexError):
+    print('Error: ' + json.dumps(data, indent=2), file=sys.stderr)
+    sys.exit(1)
+") || { err "Narration optimization failed"; exit 1; }
+
+    optimize_tokens=$(echo "$narration_response" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    u = data.get('usageMetadata', {})
+    print(f\"{u.get('promptTokenCount', '?')}/{u.get('candidatesTokenCount', '?')}\")
+except: print('?/?')
+" 2>/dev/null || echo "?/?")
+
+    # Clear the "optimizing..." line
+    echo -ne "\r\033[K" >&2
+
+    if [[ "$quiet" == false ]]; then
+      echo -e "  ${GRAY}──────────────────────────────────${RESET}" >&2
+      # Show transcript with tags highlighted
+      echo "$transcript" | sed -E "
+        s/\[([^]]+)\]/$(printf '\033[33m')[\1]$(printf '\033[0m\033[2m')/g
+      " | while IFS= read -r line; do
+        echo -e "  ${DIM}${line}${RESET}" >&2
+      done
+      echo -e "  ${GRAY}──────────────────────────────────${RESET}" >&2
+    fi
+  else
+    transcript="$input_text"
+  fi
+
+  # Step 2: TTS generation (with chunking for long text)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  local wav_file="${tmpdir}/out.wav"
+
+  local word_count
+  word_count=$(echo "$transcript" | wc -w | xargs)
+
+  if [[ "$word_count" -gt "$CHUNK_MAX_WORDS" ]]; then
+    # Chunked mode
+    local chunks_json
+    chunks_json=$(chunk_text "$transcript")
+    local num_chunks
+    num_chunks=$(echo "$chunks_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+    echo -e "  ${GRAY}generating audio...${RESET} ${DIM}${num_chunks} chunks, ${word_count} words${RESET}" >&2
+
+    local chunk_files=()
+    local chunk_errors=0
+    local batch_size=3
+    local completed=0
+
+    # Process chunks in batches of batch_size
+    for batch_start in $(seq 0 "$batch_size" $((num_chunks - 1))); do
+      local batch_end=$((batch_start + batch_size - 1))
+      if [[ $batch_end -ge $num_chunks ]]; then
+        batch_end=$((num_chunks - 1))
+      fi
+
+      local batch_pids=()
+      for i in $(seq "$batch_start" "$batch_end"); do
+        local chunk
+        chunk=$(echo "$chunks_json" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i])")
+        local chunk_wav="${tmpdir}/chunk_${i}.wav"
+        chunk_files+=("$chunk_wav")
+
+        tts_one_chunk "$chunk" "$chunk_wav" "$voice" "$tts_model" "$GEMINI_API_KEY" &
+        batch_pids+=($!)
+      done
+
+      # Wait for this batch to finish
+      for pid in "${batch_pids[@]}"; do
+        if wait "$pid"; then
+          completed=$((completed + 1))
+        else
+          chunk_errors=$((chunk_errors + 1))
+          completed=$((completed + 1))
+        fi
+        echo -ne "\r  ${GRAY}generating audio...${RESET} ${DIM}${completed}/${num_chunks}${RESET}  " >&2
+      done
+    done
+    echo "" >&2
+
+    # Check for errors
+    local failed_chunks=()
+    for f in "${chunk_files[@]}"; do
+      if [[ -f "${f}.err" ]]; then
+        failed_chunks+=("$(cat "${f}.err")")
+      fi
+    done
+
+    if [[ ${#failed_chunks[@]} -gt 0 ]]; then
+      err "${#failed_chunks[@]} chunk(s) failed"
+      for msg in "${failed_chunks[@]}"; do
+        echo -e "  ${DIM}${msg}${RESET}" >&2
+      done
+      # Continue with successful chunks
+    fi
+
+    # Collect valid WAVs
+    local valid_wavs=()
+    for f in "${chunk_files[@]}"; do
+      if [[ -f "$f" ]]; then
+        valid_wavs+=("$f")
+      fi
+    done
+
+    if [[ ${#valid_wavs[@]} -eq 0 ]]; then
+      err "All chunks failed"
+      rm -rf "$tmpdir"
+      exit 1
+    fi
+
+    # Concatenate WAVs
+    if [[ ${#valid_wavs[@]} -eq 1 ]]; then
+      cp "${valid_wavs[0]}" "$wav_file"
+    else
+      # Build ffmpeg concat filter
+      local concat_list="${tmpdir}/concat.txt"
+      for f in "${valid_wavs[@]}"; do
+        echo "file '${f}'" >> "$concat_list"
+      done
+      ffmpeg -y -loglevel error -f concat -safe 0 -i "$concat_list" -c copy "$wav_file"
+    fi
+
+    # Aggregate token counts
+    local total_prompt=0 total_completion=0
+    for f in "${chunk_files[@]}"; do
+      if [[ -f "${f}.tokens" ]]; then
+        local tok_line
+        tok_line=$(cat "${f}.tokens")
+        local tp tc
+        tp=$(echo "$tok_line" | cut -d, -f1)
+        tc=$(echo "$tok_line" | cut -d, -f2)
+        total_prompt=$((total_prompt + tp))
+        total_completion=$((total_completion + tc))
+      fi
+    done
+    local tts_tokens="${total_prompt}/${total_completion}"
+
+  else
+    # Single-chunk mode (original behavior)
+    echo -ne "  ${GRAY}generating audio...${RESET}" >&2
+
+    local escaped_transcript
+    escaped_transcript=$(json_escape "$transcript")
+
+    local tts_response
+    tts_response=$(curl -s "${API_BASE}/${tts_model}:generateContent" \
+      -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"contents\": [{
+          \"parts\": [{\"text\": ${escaped_transcript}}]
+        }],
+        \"generationConfig\": {
+          \"responseModalities\": [\"AUDIO\"],
+          \"speechConfig\": {
+            \"voiceConfig\": {
+              \"prebuiltVoiceConfig\": {
+                \"voiceName\": \"${voice}\"
+              }
+            }
+          }
+        }
+      }")
+
+    local audio_data
+    audio_data=$(echo "$tts_response" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    audio = data['candidates'][0]['content']['parts'][0]['inlineData']['data']
+    print(audio, end='')
+except (KeyError, IndexError):
+    print('Error: ' + json.dumps(data, indent=2), file=sys.stderr)
+    sys.exit(1)
+") || { echo "" >&2; err "TTS generation failed"; exit 1; }
+
+    local tts_tokens
+    tts_tokens=$(echo "$tts_response" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    u = data.get('usageMetadata', {})
+    print(f\"{u.get('promptTokenCount', '?')}/{u.get('candidatesTokenCount', '?')}\")
+except: print('?/?')
+" 2>/dev/null || echo "?/?")
+
+    local pcm_file="${tmpdir}/out.pcm"
+    echo "$audio_data" | base64 --decode > "$pcm_file"
+    ffmpeg -y -loglevel error -f s16le -ar 24000 -ac 1 -i "$pcm_file" "$wav_file"
+    echo -ne "\r\033[K" >&2
+  fi
+
+  # Get audio duration
+  local duration
+  duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$wav_file" 2>/dev/null | cut -d. -f1 || echo "?")
+  local dur_display
+  if [[ "$duration" != "?" && "$duration" -gt 0 ]] 2>/dev/null; then
+    local mins=$((duration / 60))
+    local secs=$((duration % 60))
+    if [[ $mins -gt 0 ]]; then
+      dur_display="${mins}m${secs}s"
+    else
+      dur_display="${secs}s"
+    fi
+  else
+    dur_display="~"
+  fi
+
+  # Clear the "generating..." line and show summary
+  echo -ne "\r\033[K" >&2
+  echo -ne "  ${GRAY}duration${RESET}  ${dur_display}" >&2
+  echo -ne "    ${GRAY}tokens${RESET}  " >&2
+  if [[ "$raw" == false ]]; then
+    echo -ne "${DIM}opt:${optimize_tokens} tts:${tts_tokens}${RESET}" >&2
+  else
+    echo -ne "${DIM}tts:${tts_tokens}${RESET}" >&2
+  fi
+  echo "" >&2
+
+  # Output: stdout, json, file, or play
+  if [[ "$use_stdout" == true ]]; then
+    cat "$wav_file"
+    rm -rf "$tmpdir"
+  elif [[ "$json_out" == true ]]; then
+    local wav_b64
+    wav_b64=$(base64 < "$wav_file" | tr -d '\n')
+    local opt_tok="${optimize_tokens:-}"
+    local escaped_transcript
+    escaped_transcript=$(json_escape "$transcript")
+    local is_raw="false"
+    [[ "$raw" == true ]] && is_raw="true"
+    python3 -c "
+import json, sys
+meta = {
+    'voice': sys.argv[1],
+    'duration_seconds': int(sys.argv[2]) if sys.argv[2].isdigit() else None,
+    'raw': sys.argv[3] == 'true',
+    'tokens': {
+        'optimize': sys.argv[4] if sys.argv[4] else None,
+        'tts': sys.argv[5]
+    },
+    'transcript': json.loads(sys.argv[6]),
+    'audio_wav_base64': sys.argv[7]
+}
+print(json.dumps(meta, indent=2))
+" "$voice" "${duration:-0}" "$is_raw" "$opt_tok" "$tts_tokens" "$escaped_transcript" "$wav_b64"
+    rm -rf "$tmpdir"
+  elif [[ "$play" == true ]]; then
+    if [[ -n "$show_mode" ]] && command -v ffplay &>/dev/null; then
+      local ff_showmode=1
+      local mode_label="waveform"
+      case "$show_mode" in
+        spec|spectrogram) ff_showmode=2; mode_label="spectrogram" ;;
+        wave|waveform)    ff_showmode=1; mode_label="waveform" ;;
+      esac
+      echo -e "  ${GREEN}▶${RESET} ${DIM}${mode_label}${RESET}" >&2
+      ffplay -autoexit -showmode "$ff_showmode" -window_title "speak: ${voice}" -loglevel quiet "$wav_file" 2>/dev/null
+    else
+      echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
+      if command -v afplay &>/dev/null; then
+        afplay "$wav_file"
+      elif command -v paplay &>/dev/null; then
+        paplay "$wav_file"
+      elif command -v aplay &>/dev/null; then
+        aplay "$wav_file"
+      elif command -v mpv &>/dev/null; then
+        mpv --no-video --really-quiet "$wav_file"
+      else
+        echo "" >&2
+        err "No audio player found"
+        echo -e "  ${DIM}Saved to: ${wav_file}${RESET}" >&2
+        exit 0
+      fi
+    fi
+    echo -ne "\r\033[K" >&2
+    echo -e "  ${GREEN}✓${RESET} ${DIM}done${RESET}" >&2
+    rm -rf "$tmpdir"
+  else
+    cp "$wav_file" "$output"
+    rm -rf "$tmpdir"
+    echo -e "  ${GREEN}✓${RESET} ${DIM}saved → ${output}${RESET}" >&2
+  fi
+}
+
+# ── Entry point ──────────────────────────────────────────────────────
+load_config
+
+case "${1:-}" in
+  voices) cmd_voices ;;
+  set)    shift; cmd_set "$@" ;;
+  --help) cmd_help ;;
+  --version) echo "speak v${VERSION}" ;;
+  *)      cmd_speak "$@" ;;
+esac
