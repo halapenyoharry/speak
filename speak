@@ -69,6 +69,7 @@ load_config() {
   DEFAULT_VOICE="Puck"
   DEFAULT_MODEL="gemini-3.1-flash-tts-preview"
   DEFAULT_OPTIMIZE_MODEL="gemini-2.5-flash"
+  DEFAULT_USE_GCLOUD="false"
   if [[ -f "$CONFIG_FILE" ]]; then
     while IFS='=' read -r key value; do
       [[ -z "$key" || "$key" == \#* ]] && continue
@@ -78,6 +79,7 @@ load_config() {
         voice) DEFAULT_VOICE="$value" ;;
         tts_model) DEFAULT_MODEL="$value" ;;
         optimize_model) DEFAULT_OPTIMIZE_MODEL="$value" ;;
+        use_gcloud) DEFAULT_USE_GCLOUD="$value" ;;
       esac
     done < "$CONFIG_FILE"
   fi
@@ -161,6 +163,7 @@ cmd_set() {
     echo -ne "  voice           " >&2; print_voice_badge "$DEFAULT_VOICE" >&2; echo "" >&2
     echo -e "  tts_model       ${DIM}${DEFAULT_MODEL}${RESET}" >&2
     echo -e "  optimize_model  ${DIM}${DEFAULT_OPTIMIZE_MODEL}${RESET}" >&2
+    echo -e "  use_gcloud      ${DIM}${DEFAULT_USE_GCLOUD}${RESET}" >&2
     echo "" >&2
     return
   fi
@@ -185,9 +188,17 @@ cmd_set() {
       save_config_value "$key" "$value"
       echo -e "${GREEN}✓${RESET} ${key} set to ${BOLD}${value}${RESET}" >&2
       ;;
+    use_gcloud)
+      if [[ "$value" != "true" && "$value" != "false" ]]; then
+        err "Invalid value for use_gcloud. Must be 'true' or 'false'"
+        exit 1
+      fi
+      save_config_value "use_gcloud" "$value"
+      echo -e "${GREEN}✓${RESET} use_gcloud set to ${BOLD}${value}${RESET}" >&2
+      ;;
     *)
       err "Unknown config key: $key"
-      echo -e "${DIM}Valid keys: voice, tts_model, optimize_model${RESET}" >&2
+      echo -e "${DIM}Valid keys: voice, tts_model, optimize_model, use_gcloud${RESET}" >&2
       exit 1
       ;;
   esac
@@ -210,6 +221,8 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -o, --output FILE             Save .wav file instead of playing
     -q, --quiet                   Suppress narration transcript display
     -f, --fast                    Use faster 2.5 Flash TTS model
+    -g, --gcloud                  Use Google Cloud TTS (Chirp 3 HD) for stable narration
+    --no-gcloud                   Disable Cloud TTS (use Gemini AI Studio instead)
     -s, --show [MODE]             Play with visual display (wave or spec)
         --stdout                  Write WAV audio to stdout (for piping)
         --json                    Output JSON metadata + base64 audio to stdout
@@ -224,6 +237,7 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak -o narrated.wav < chapter.txt
     cat essay.md | speak -v Charon -o essay.wav
     speak set voice Kore          Change default voice
+    speak set use_gcloud true     Default to Google Cloud TTS
     speak voices                  Browse all 30 voices
     speak -s "check this"         Play with waveform display
     speak --show spec "text"      Play with spectrogram display
@@ -235,12 +249,13 @@ $(echo -e "${BOLD}AUDIO TAGS${RESET}")  $(echo -e "${DIM}(used by the optimizer 
     [laughs]    [sighs]    [pause]    [shouting] [sarcastic]
 
 $(echo -e "${BOLD}ENVIRONMENT${RESET}")
-    GEMINI_API_KEY                Required. Your Gemini API key.
+    GEMINI_API_KEY                Required (if using Gemini). Your Gemini API key.
 
 $(echo -e "${BOLD}CONFIG${RESET}")  $(echo -e "${DIM}(~/.config/speak/config)${RESET}")
     voice=Puck                    Default voice
     tts_model=gemini-3.1-flash-tts-preview
     optimize_model=gemini-2.5-flash
+    use_gcloud=false
 
 EOF
 }
@@ -308,32 +323,105 @@ tts_one_chunk() {
   local voice="$3"
   local model="$4"
   local api_key="$5"
+  local use_cloud="${6:-false}"
 
-  local escaped
-  escaped=$(json_escape "$chunk_text")
+  if [[ "$use_cloud" == "true" ]]; then
+    local access_token="${CLOUD_ACCESS_TOKEN:-}"
+    local gcp_project="${CLOUD_PROJECT:-}"
 
-  local response
-  response=$(curl -s "${API_BASE}/${model}:generateContent" \
-    -H "x-goog-api-key: ${api_key}" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"contents\": [{
-        \"parts\": [{\"text\": ${escaped}}]
-      }],
-      \"generationConfig\": {
-        \"responseModalities\": [\"AUDIO\"],
-        \"speechConfig\": {
-          \"voiceConfig\": {
-            \"prebuiltVoiceConfig\": {
-              \"voiceName\": \"${voice}\"
+    if [[ -z "$access_token" ]]; then
+      access_token=$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || echo "")
+    fi
+    if [[ -z "$gcp_project" ]]; then
+      gcp_project=$(gcloud config get-value project 2>/dev/null || echo "g-drive-474022")
+    fi
+
+    if [[ -z "$access_token" ]]; then
+      echo "CHUNK_ERROR:gcloud authentication failed" > "${wav_path}.err"
+      return 1
+    fi
+
+    # Map voice to en-US-Chirp3-HD-
+    local cloud_voice="$voice"
+    if [[ "$cloud_voice" != en-US-Chirp3-HD-* ]]; then
+      cloud_voice="en-US-Chirp3-HD-${voice}"
+    fi
+
+    local escaped
+    escaped=$(json_escape "$chunk_text")
+
+    local response
+    response=$(curl -s "https://texttospeech.googleapis.com/v1/text:synthesize" \
+      -H "Authorization: Bearer ${access_token}" \
+      -H "X-Goog-User-Project: ${gcp_project}" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"input\": {
+          \"text\": ${escaped}
+        },
+        \"voice\": {
+          \"languageCode\": \"en-US\",
+          \"name\": \"${cloud_voice}\"
+        },
+        \"audioConfig\": {
+          \"audioEncoding\": \"LINEAR16\"
+        }
+      }")
+
+    local audio_data
+    audio_data=$(echo "$response" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if 'error' in data:
+        print('CHUNK_ERROR:' + data['error'].get('message', 'unknown error'), end='')
+    else:
+        audio = data.get('audioContent', '')
+        if audio:
+            print(audio, end='')
+        else:
+            print('CHUNK_ERROR:audioContent missing', end='')
+except Exception as e:
+    print('CHUNK_ERROR:json parse or unexpected error: ' + str(e), end='')
+") || { echo "CHUNK_ERROR:curl_failed"; return 1; }
+
+    if [[ "$audio_data" == CHUNK_ERROR:* ]]; then
+      echo "${audio_data}" > "${wav_path}.err"
+      return 1
+    fi
+
+    echo "$audio_data" | base64 --decode > "$wav_path"
+
+    # Write character count as prompt count and 0 for completion
+    local char_count
+    char_count=${#chunk_text}
+    echo "${char_count},0" > "${wav_path}.tokens"
+  else
+    local escaped
+    escaped=$(json_escape "$chunk_text")
+
+    local response
+    response=$(curl -s "${API_BASE}/${model}:generateContent" \
+      -H "x-goog-api-key: ${api_key}" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"contents\": [{
+          \"parts\": [{\"text\": ${escaped}}]
+        }],
+        \"generationConfig\": {
+          \"responseModalities\": [\"AUDIO\"],
+          \"speechConfig\": {
+            \"voiceConfig\": {
+              \"prebuiltVoiceConfig\": {
+                \"voiceName\": \"${voice}\"
+              }
             }
           }
         }
-      }
-    }")
+      }")
 
-  local audio_data
-  audio_data=$(echo "$response" | python3 -c "
+    local audio_data
+    audio_data=$(echo "$response" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 try:
@@ -344,18 +432,18 @@ except (KeyError, IndexError):
     print('CHUNK_ERROR:' + msg, end='')
 ") || { echo "CHUNK_ERROR:curl_failed"; return 1; }
 
-  if [[ "$audio_data" == CHUNK_ERROR:* ]]; then
-    echo "${audio_data}" > "${wav_path}.err"
-    return 1
-  fi
+    if [[ "$audio_data" == CHUNK_ERROR:* ]]; then
+      echo "${audio_data}" > "${wav_path}.err"
+      return 1
+    fi
 
-  local pcm_path="${wav_path%.wav}.pcm"
-  echo "$audio_data" | base64 --decode > "$pcm_path"
-  ffmpeg -y -loglevel error -f s16le -ar 24000 -ac 1 -i "$pcm_path" "$wav_path"
-  rm -f "$pcm_path"
+    local pcm_path="${wav_path%.wav}.pcm"
+    echo "$audio_data" | base64 --decode > "$pcm_path"
+    ffmpeg -y -loglevel error -f s16le -ar 24000 -ac 1 -i "$pcm_path" "$wav_path"
+    rm -f "$pcm_path"
 
-  # Write token info
-  echo "$response" | python3 -c "
+    # Write token info
+    echo "$response" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 try:
@@ -363,6 +451,7 @@ try:
     print(f\"{u.get('promptTokenCount', 0)},{u.get('candidatesTokenCount', 0)}\")
 except: print('0,0')
 " > "${wav_path}.tokens" 2>/dev/null
+  fi
 }
 
 
@@ -379,6 +468,7 @@ cmd_speak() {
   local show_mode=""
   local fast=false
   local tts_model="$DEFAULT_MODEL"
+  local use_cloud="$DEFAULT_USE_CLOUD"
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -391,6 +481,8 @@ cmd_speak() {
       --stdout) use_stdout=true; play=false; quiet=true; shift ;;
       --json) json_out=true; play=false; quiet=true; shift ;;
       -f|--fast) fast=true; shift ;;
+      -g|--cloud) use_cloud=true; shift ;;
+      --no-cloud) use_cloud=false; shift ;;
       -s|--show)
         # Optional arg: wave or spec. If next arg doesn't look like a mode, default to wave.
         case "${2:-}" in
@@ -416,6 +508,25 @@ cmd_speak() {
   # Fast mode: use 2.5 Flash TTS
   if [[ "$fast" == true ]]; then
     tts_model="gemini-2.5-flash-preview-tts"
+  fi
+
+  # Pre-resolve Google Cloud credentials if using Cloud TTS
+  if [[ "$use_cloud" == "true" ]]; then
+    local access_token
+    access_token=$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || echo "")
+    if [[ -z "$access_token" ]]; then
+      err "Google Cloud SDK credentials not found."
+      echo -e "${DIM}Please run: gcloud auth application-default login${RESET}" >&2
+      exit 1
+    fi
+    export CLOUD_ACCESS_TOKEN="$access_token"
+
+    local gcp_project
+    gcp_project=$(gcloud config get-value project 2>/dev/null || echo "")
+    if [[ -z "$gcp_project" ]]; then
+      gcp_project="g-drive-474022"
+    fi
+    export CLOUD_PROJECT="$gcp_project"
   fi
 
   # Get input text
@@ -444,16 +555,21 @@ cmd_speak() {
     exit 1
   fi
 
-  if [[ -z "${GEMINI_API_KEY:-}" ]]; then
-    err "GEMINI_API_KEY not set"
-    echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"${RESET}" >&2
-    exit 1
+  if [[ "$use_cloud" == "false" || "$raw" == "false" ]]; then
+    if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+      err "GEMINI_API_KEY not set"
+      echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"${RESET}" >&2
+      exit 1
+    fi
   fi
 
   # Display header
   header
   echo -ne "  ${GRAY}voice${RESET}  " >&2
   print_voice_badge "$voice" >&2
+  if [[ "$use_cloud" == "true" ]]; then
+    echo -ne "  ${BLUE}cloud${RESET}" >&2
+  fi
   if [[ "$raw" == true ]]; then
     echo -ne "  ${YELLOW}raw${RESET}" >&2
   fi
@@ -570,7 +686,7 @@ except: print('?/?')
         local chunk_wav="${tmpdir}/chunk_${i}.wav"
         chunk_files+=("$chunk_wav")
 
-        tts_one_chunk "$chunk" "$chunk_wav" "$voice" "$tts_model" "$GEMINI_API_KEY" &
+        tts_one_chunk "$chunk" "$chunk_wav" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_cloud" &
         batch_pids+=($!)
       done
 
@@ -645,57 +761,28 @@ except: print('?/?')
     local tts_tokens="${total_prompt}/${total_completion}"
 
   else
-    # Single-chunk mode (original behavior)
+    # Single-chunk mode (refactored to call tts_one_chunk directly)
     echo -ne "  ${GRAY}generating audio...${RESET}" >&2
 
-    local escaped_transcript
-    escaped_transcript=$(json_escape "$transcript")
+    if ! tts_one_chunk "$transcript" "$wav_file" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_cloud"; then
+      local err_msg="TTS generation failed"
+      if [[ -f "${wav_file}.err" ]]; then
+        err_msg=$(cat "${wav_file}.err")
+      fi
+      echo "" >&2
+      err "$err_msg"
+      exit 1
+    fi
 
-    local tts_response
-    tts_response=$(curl -s "${API_BASE}/${tts_model}:generateContent" \
-      -H "x-goog-api-key: ${GEMINI_API_KEY}" \
-      -H "Content-Type: application/json" \
-      -d "{
-        \"contents\": [{
-          \"parts\": [{\"text\": ${escaped_transcript}}]
-        }],
-        \"generationConfig\": {
-          \"responseModalities\": [\"AUDIO\"],
-          \"speechConfig\": {
-            \"voiceConfig\": {
-              \"prebuiltVoiceConfig\": {
-                \"voiceName\": \"${voice}\"
-              }
-            }
-          }
-        }
-      }")
-
-    local audio_data
-    audio_data=$(echo "$tts_response" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-try:
-    audio = data['candidates'][0]['content']['parts'][0]['inlineData']['data']
-    print(audio, end='')
-except (KeyError, IndexError):
-    print('Error: ' + json.dumps(data, indent=2), file=sys.stderr)
-    sys.exit(1)
-") || { echo "" >&2; err "TTS generation failed"; exit 1; }
-
-    local tts_tokens
-    tts_tokens=$(echo "$tts_response" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-try:
-    u = data.get('usageMetadata', {})
-    print(f\"{u.get('promptTokenCount', '?')}/{u.get('candidatesTokenCount', '?')}\")
-except: print('?/?')
-" 2>/dev/null || echo "?/?")
-
-    local pcm_file="${tmpdir}/out.pcm"
-    echo "$audio_data" | base64 --decode > "$pcm_file"
-    ffmpeg -y -loglevel error -f s16le -ar 24000 -ac 1 -i "$pcm_file" "$wav_file"
+    local tts_tokens="?/?"
+    if [[ -f "${wav_file}.tokens" ]]; then
+      local tok_line
+      tok_line=$(cat "${wav_file}.tokens")
+      local tp tc
+      tp=$(echo "$tok_line" | cut -d, -f1)
+      tc=$(echo "$tok_line" | cut -d, -f2)
+      tts_tokens="${tp}/${tc}"
+    fi
     echo -ne "\r\033[K" >&2
   fi
 
