@@ -223,6 +223,7 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -f, --fast                    Use faster 2.5 Flash TTS model
     -g, --gcloud                  Use Google Cloud TTS (Chirp 3 HD) for stable narration
     --no-gcloud                   Disable Cloud TTS (use Gemini AI Studio instead)
+    -k, --kokoro                  Use local Kokoro TTS engine (completely offline)
     -s, --show [MODE]             Play with visual display (wave or spec)
         --stdout                  Write WAV audio to stdout (for piping)
         --json                    Output JSON metadata + base64 audio to stdout
@@ -239,6 +240,8 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak set voice Kore          Change default voice
     speak set use_gcloud true     Default to Google Cloud TTS
     speak voices                  Browse all 30 voices
+    speak -k "hello world"        Speak offline using local Kokoro engine
+    speak -k -s "check this"      Speak offline with local waveform display
     speak -s "check this"         Play with waveform display
     speak --show spec "text"      Play with spectrogram display
     speak --stdout "hello" | mpv - Pipe audio to another process
@@ -469,6 +472,7 @@ cmd_speak() {
   local fast=false
   local tts_model="$DEFAULT_MODEL"
   local use_gcloud="$DEFAULT_USE_GCLOUD"
+  local use_kokoro=false
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -483,6 +487,7 @@ cmd_speak() {
       -f|--fast) fast=true; shift ;;
       -g|--gcloud) use_gcloud=true; shift ;;
       --no-gcloud) use_gcloud=false; shift ;;
+      -k|--kokoro) use_kokoro=true; shift ;;
       -s|--show)
         # Optional arg: wave or spec. If next arg doesn't look like a mode, default to wave.
         case "${2:-}" in
@@ -495,15 +500,26 @@ cmd_speak() {
     esac
   done
 
-  # Validate voice
-  local voice_entry
-  if ! voice_entry=$(get_voice_entry "$voice"); then
-    err "Unknown voice: $voice"
-    echo -e "${DIM}Run 'speak voices' to see options${RESET}" >&2
+  # Enforce mutual exclusion between local Kokoro and Google Cloud TTS
+  if [[ "$use_kokoro" == "true" && "$use_gcloud" == "true" ]]; then
+    err "options -k (--kokoro) and -g (--gcloud) are mutually exclusive. Please choose one engine."
     exit 1
   fi
-  # Normalize voice name
-  voice="${voice_entry%%|*}"
+
+  # Validate voice
+  local voice_entry
+  if [[ "$use_kokoro" == "true" ]]; then
+    # Accept any voice name; the Python synthesis helper will map or pass it through
+    :
+  else
+    if ! voice_entry=$(get_voice_entry "$voice"); then
+      err "Unknown voice: $voice"
+      echo -e "${DIM}Run 'speak voices' to see options${RESET}" >&2
+      exit 1
+    fi
+    # Normalize voice name
+    voice="${voice_entry%%|*}"
+  fi
 
   # Fast mode: use 2.5 Flash TTS
   if [[ "$fast" == true ]]; then
@@ -555,20 +571,29 @@ cmd_speak() {
     exit 1
   fi
 
-  if [[ "$use_gcloud" == "false" || "$raw" == "false" ]]; then
-    if [[ -z "${GEMINI_API_KEY:-}" ]]; then
-      err "GEMINI_API_KEY not set"
-      echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"${RESET}" >&2
-      exit 1
+  if [[ "$use_kokoro" == "false" || "$raw" == "false" ]]; then
+    if [[ "$use_gcloud" == "false" || "$raw" == "false" ]]; then
+      if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+        err "GEMINI_API_KEY not set"
+        echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"${RESET}" >&2
+        exit 1
+      fi
     fi
   fi
 
   # Display header
   header
   echo -ne "  ${GRAY}voice${RESET}  " >&2
-  print_voice_badge "$voice" >&2
+  if [[ "$use_kokoro" == "true" ]]; then
+    printf "${GREEN}◆ ${voice}${RESET}" >&2
+  else
+    print_voice_badge "$voice" >&2
+  fi
   if [[ "$use_gcloud" == "true" ]]; then
     echo -ne "  ${BLUE}gcloud${RESET}" >&2
+  fi
+  if [[ "$use_kokoro" == "true" ]]; then
+    echo -ne "  ${GREEN}local${RESET}" >&2
   fi
   if [[ "$raw" == true ]]; then
     echo -ne "  ${YELLOW}raw${RESET}" >&2
@@ -655,135 +680,158 @@ except: print('?/?')
   tmpdir=$(mktemp -d)
   local wav_file="${tmpdir}/out.wav"
 
-  local word_count
-  word_count=$(echo "$transcript" | wc -w | xargs)
-
-  if [[ "$word_count" -gt "$CHUNK_MAX_WORDS" ]]; then
-    # Chunked mode
-    local chunks_json
-    chunks_json=$(chunk_text "$transcript")
-    local num_chunks
-    num_chunks=$(echo "$chunks_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
-
-    echo -e "  ${GRAY}generating audio...${RESET} ${DIM}${num_chunks} chunks, ${word_count} words${RESET}" >&2
-
-    local chunk_files=()
-    local chunk_errors=0
-    local batch_size=3
-    local completed=0
-
-    # Process chunks in batches of batch_size
-    for batch_start in $(seq 0 "$batch_size" $((num_chunks - 1))); do
-      local batch_end=$((batch_start + batch_size - 1))
-      if [[ $batch_end -ge $num_chunks ]]; then
-        batch_end=$((num_chunks - 1))
-      fi
-
-      local batch_pids=()
-      for i in $(seq "$batch_start" "$batch_end"); do
-        local chunk
-        chunk=$(echo "$chunks_json" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i])")
-        local chunk_wav="${tmpdir}/chunk_${i}.wav"
-        chunk_files+=("$chunk_wav")
-
-        tts_one_chunk "$chunk" "$chunk_wav" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_gcloud" &
-        batch_pids+=($!)
-      done
-
-      # Wait for this batch to finish
-      for pid in "${batch_pids[@]}"; do
-        if wait "$pid"; then
-          completed=$((completed + 1))
-        else
-          chunk_errors=$((chunk_errors + 1))
-          completed=$((completed + 1))
-        fi
-        echo -ne "\r  ${GRAY}generating audio...${RESET} ${DIM}${completed}/${num_chunks}${RESET}  " >&2
-      done
+  local tts_tokens="?/?"
+  if [[ "$use_kokoro" == "true" ]]; then
+    echo -ne "  ${GRAY}generating audio...${RESET}" >&2
+    local source="${BASH_SOURCE[0]}"
+    while [[ -h "$source" ]]; do
+      local dir
+      dir="$(cd -P "$(dirname "$source")" && pwd)"
+      source="$(readlink "$source")"
+      [[ $source != /* ]] && source="$dir/$source"
     done
-    echo "" >&2
-
-    # Check for errors
-    local failed_chunks=()
-    for f in "${chunk_files[@]}"; do
-      if [[ -f "${f}.err" ]]; then
-        failed_chunks+=("$(cat "${f}.err")")
-      fi
-    done
-
-    if [[ ${#failed_chunks[@]} -gt 0 ]]; then
-      err "${#failed_chunks[@]} chunk(s) failed"
-      for msg in "${failed_chunks[@]}"; do
-        echo -e "  ${DIM}${msg}${RESET}" >&2
-      done
-      # Continue with successful chunks
-    fi
-
-    # Collect valid WAVs
-    local valid_wavs=()
-    for f in "${chunk_files[@]}"; do
-      if [[ -f "$f" ]]; then
-        valid_wavs+=("$f")
-      fi
-    done
-
-    if [[ ${#valid_wavs[@]} -eq 0 ]]; then
-      err "All chunks failed"
+    local script_dir
+    script_dir="$(cd -P "$(dirname "$source")" && pwd)"
+    if ! python3 "${script_dir}/kokoro_tts.py" --text "$transcript" --voice "$voice" --output "$wav_file"; then
+      echo "" >&2
+      err "Local TTS synthesis failed"
       rm -rf "$tmpdir"
       exit 1
     fi
+    tts_tokens="local"
+    echo -ne "\r\033[K" >&2
+  else
+    local word_count
+    word_count=$(echo "$transcript" | wc -w | xargs)
 
-    # Concatenate WAVs
-    if [[ ${#valid_wavs[@]} -eq 1 ]]; then
-      cp "${valid_wavs[0]}" "$wav_file"
-    else
-      # Build ffmpeg concat filter
-      local concat_list="${tmpdir}/concat.txt"
-      for f in "${valid_wavs[@]}"; do
-        echo "file '${f}'" >> "$concat_list"
+    if [[ "$word_count" -gt "$CHUNK_MAX_WORDS" ]]; then
+      # Chunked mode
+      local chunks_json
+      chunks_json=$(chunk_text "$transcript")
+      local num_chunks
+      num_chunks=$(echo "$chunks_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+      echo -e "  ${GRAY}generating audio...${RESET} ${DIM}${num_chunks} chunks, ${word_count} words${RESET}" >&2
+
+      local chunk_files=()
+      local chunk_errors=0
+      local batch_size=3
+      local completed=0
+
+      # Process chunks in batches of batch_size
+      for batch_start in $(seq 0 "$batch_size" $((num_chunks - 1))); do
+        local batch_end=$((batch_start + batch_size - 1))
+        if [[ $batch_end -ge $num_chunks ]]; then
+          batch_end=$((num_chunks - 1))
+        fi
+
+        local batch_pids=()
+        for i in $(seq "$batch_start" "$batch_end"); do
+          local chunk
+          chunk=$(echo "$chunks_json" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i])")
+          local chunk_wav="${tmpdir}/chunk_${i}.wav"
+          chunk_files+=("$chunk_wav")
+
+          tts_one_chunk "$chunk" "$chunk_wav" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_gcloud" &
+          batch_pids+=($!)
+        done
+
+        # Wait for this batch to finish
+        for pid in "${batch_pids[@]}"; do
+          if wait "$pid"; then
+            completed=$((completed + 1))
+          else
+            chunk_errors=$((chunk_errors + 1))
+            completed=$((completed + 1))
+          fi
+          echo -ne "\r  ${GRAY}generating audio...${RESET} ${DIM}${completed}/${num_chunks}${RESET}  " >&2
+        done
       done
-      ffmpeg -y -loglevel error -f concat -safe 0 -i "$concat_list" -c copy "$wav_file"
-    fi
+      echo "" >&2
 
-    # Aggregate token counts
-    local total_prompt=0 total_completion=0
-    for f in "${chunk_files[@]}"; do
-      if [[ -f "${f}.tokens" ]]; then
+      # Check for errors
+      local failed_chunks=()
+      for f in "${chunk_files[@]}"; do
+        if [[ -f "${f}.err" ]]; then
+          failed_chunks+=("$(cat "${f}.err")")
+        fi
+      done
+
+      if [[ ${#failed_chunks[@]} -gt 0 ]]; then
+        err "${#failed_chunks[@]} chunk(s) failed"
+        for msg in "${failed_chunks[@]}"; do
+          echo -e "  ${DIM}${msg}${RESET}" >&2
+        done
+        # Continue with successful chunks
+      fi
+
+      # Collect valid WAVs
+      local valid_wavs=()
+      for f in "${chunk_files[@]}"; do
+        if [[ -f "$f" ]]; then
+          valid_wavs+=("$f")
+        fi
+      done
+
+      if [[ ${#valid_wavs[@]} -eq 0 ]]; then
+        err "All chunks failed"
+        rm -rf "$tmpdir"
+        exit 1
+      fi
+
+      # Concatenate WAVs
+      if [[ ${#valid_wavs[@]} -eq 1 ]]; then
+        cp "${valid_wavs[0]}" "$wav_file"
+      else
+        # Build ffmpeg concat filter
+        local concat_list="${tmpdir}/concat.txt"
+        for f in "${valid_wavs[@]}"; do
+          echo "file '${f}'" >> "$concat_list"
+        done
+        ffmpeg -y -loglevel error -f concat -safe 0 -i "$concat_list" -c copy "$wav_file"
+      fi
+
+      # Aggregate token counts
+      local total_prompt=0 total_completion=0
+      for f in "${chunk_files[@]}"; do
+        if [[ -f "${f}.tokens" ]]; then
+          local tok_line
+          tok_line=$(cat "${f}.tokens")
+          local tp tc
+          tp=$(echo "$tok_line" | cut -d, -f1)
+          tc=$(echo "$tok_line" | cut -d, -f2)
+          total_prompt=$((total_prompt + tp))
+          total_completion=$((total_completion + tc))
+        fi
+      done
+      tts_tokens="${total_prompt}/${total_completion}"
+
+    else
+      # Single-chunk mode (refactored to call tts_one_chunk directly)
+      echo -ne "  ${GRAY}generating audio...${RESET}" >&2
+
+      if ! tts_one_chunk "$transcript" "$wav_file" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_gcloud"; then
+        local err_msg="TTS generation failed"
+        if [[ -f "${wav_file}.err" ]]; then
+          err_msg=$(cat "${wav_file}.err")
+        fi
+        echo "" >&2
+        err "$err_msg"
+        exit 1
+      fi
+
+      local tts_tokens_inner="?/?"
+      if [[ -f "${wav_file}.tokens" ]]; then
         local tok_line
-        tok_line=$(cat "${f}.tokens")
+        tok_line=$(cat "${wav_file}.tokens")
         local tp tc
         tp=$(echo "$tok_line" | cut -d, -f1)
         tc=$(echo "$tok_line" | cut -d, -f2)
-        total_prompt=$((total_prompt + tp))
-        total_completion=$((total_completion + tc))
+        tts_tokens_inner="${tp}/${tc}"
       fi
-    done
-    local tts_tokens="${total_prompt}/${total_completion}"
-
-  else
-    # Single-chunk mode (refactored to call tts_one_chunk directly)
-    echo -ne "  ${GRAY}generating audio...${RESET}" >&2
-
-    if ! tts_one_chunk "$transcript" "$wav_file" "$voice" "$tts_model" "${GEMINI_API_KEY:-}" "$use_gcloud"; then
-      local err_msg="TTS generation failed"
-      if [[ -f "${wav_file}.err" ]]; then
-        err_msg=$(cat "${wav_file}.err")
-      fi
-      echo "" >&2
-      err "$err_msg"
-      exit 1
+      tts_tokens="$tts_tokens_inner"
+      echo -ne "\r\033[K" >&2
     fi
-
-    local tts_tokens="?/?"
-    if [[ -f "${wav_file}.tokens" ]]; then
-      local tok_line
-      tok_line=$(cat "${wav_file}.tokens")
-      local tp tc
-      tp=$(echo "$tok_line" | cut -d, -f1)
-      tc=$(echo "$tok_line" | cut -d, -f2)
-      tts_tokens="${tp}/${tc}"
-    fi
-    echo -ne "\r\033[K" >&2
   fi
 
   # Get audio duration
