@@ -1,0 +1,413 @@
+# voices.yaml — persona registry for the `speak` TTS CLI
+#
+# A "persona" is the substrate-independent identity the user requests (e.g. `puck`).
+# Each persona declares zero-or-more "realizations": how a specific engine renders it.
+# A realization is PRESENT IFF its engine key exists under `realizations`.
+# THERE IS NO FALLBACK KEY AND NO DEFAULT REALIZATION. If the active engine has no
+# realization for the requested persona, the driver MUST hard-error and name the
+# engines that DO realize it — never substitute, never fall back to a "nearest" voice.
+#
+# Engine config-values (exactly three): gemini | gcloud | kokoro
+#   gemini : {voice: <Name>}                    — Gemini AI Studio prebuilt voice
+#   gcloud : {voice: en-US-Chirp3-HD-<Name>, language_code: en-US}
+#   kokoro : EITHER {voice: <id>} OR {blend: [{voice: <id>, weight: <w>}, ...]}  (never both)
+#            blend weights auto-normalize in the adapter (they need not sum to 1).
+#
+# !!! gcloud VOICE-NAME VERIFICATION REQUIRED !!!
+# The `en-US-Chirp3-HD-<Name>` names below are constructed mechanically from the
+# Gemini persona names. They are NOT guaranteed to exist in Google Cloud's live
+# Chirp 3 HD voice catalogue. Before trusting any gcloud realization, verify the
+# name against the live list:
+#   gcloud ml speech ...  /  GET texttospeech.googleapis.com/v1/voices?languageCode=en-US
+# Any name not in that list will fail at synthesis time (that is correct: missing
+# realization is a hard error, not a fallback). Prune or correct names as verified.
+#
+# kokoro realizations exist ONLY for the 9 personas that kokoro_tts.py historically
+# mapped. The other 21 personas honestly have NO offline realization and OMIT the
+# kokoro key entirely — requesting them under `--engine kokoro` is a hard error.
+
+default_persona: puck
+
+personas:
+  zephyr:
+    intent: Bright, clear delivery — crisp and forward.
+    style: Bright
+    glyph: "◇"
+    color: 36
+    realizations:
+      gemini:
+        voice: Zephyr
+      gcloud:
+        voice: en-US-Chirp3-HD-Zephyr
+        language_code: en-US
+      kokoro:
+        voice: am_adam
+
+  puck:
+    intent: Upbeat, playful narration with energy.
+    style: Upbeat
+    glyph: "◆"
+    color: 33
+    default: true
+    realizations:
+      gemini:
+        voice: Puck
+      gcloud:
+        voice: en-US-Chirp3-HD-Puck
+        language_code: en-US
+      kokoro:
+        blend:
+          - voice: am_adam
+            weight: 0.5
+          - voice: am_michael
+            weight: 0.5
+
+  charon:
+    intent: Informative, measured — reads like a knowledgeable narrator.
+    style: Informative
+    glyph: "▣"
+    color: 34
+    realizations:
+      gemini:
+        voice: Charon
+      gcloud:
+        voice: en-US-Chirp3-HD-Charon
+        language_code: en-US
+      kokoro:
+        voice: am_michael
+
+  kore:
+    intent: Firm, authoritative — confident and grounded.
+    style: Firm
+    glyph: "◈"
+    color: 35
+    realizations:
+      gemini:
+        voice: Kore
+      gcloud:
+        voice: en-US-Chirp3-HD-Kore
+        language_code: en-US
+      kokoro:
+        voice: am_michael
+
+  fenrir:
+    intent: Excitable, high-energy — leans into emphasis.
+    style: Excitable
+    glyph: "△"
+    color: 31
+    realizations:
+      gemini:
+        voice: Fenrir
+      gcloud:
+        voice: en-US-Chirp3-HD-Fenrir
+        language_code: en-US
+      kokoro:
+        voice: am_adam
+
+  leda:
+    intent: Youthful, light — fresh and approachable.
+    style: Youthful
+    glyph: "○"
+    color: 36
+    realizations:
+      gemini:
+        voice: Leda
+      gcloud:
+        voice: en-US-Chirp3-HD-Leda
+        language_code: en-US
+      kokoro:
+        voice: af_bella
+
+  orus:
+    intent: Firm, steady — solid and dependable.
+    style: Firm
+    glyph: "▪"
+    color: 34
+    realizations:
+      gemini:
+        voice: Orus
+      gcloud:
+        voice: en-US-Chirp3-HD-Orus
+        language_code: en-US
+      kokoro:
+        voice: am_michael
+
+  aoede:
+    intent: Breezy, relaxed — easy and flowing.
+    style: Breezy
+    glyph: "◎"
+    color: 32
+    realizations:
+      gemini:
+        voice: Aoede
+      gcloud:
+        voice: en-US-Chirp3-HD-Aoede
+        language_code: en-US
+      kokoro:
+        voice: af_sarah
+
+  callirrhoe:
+    intent: Easy-going, unhurried — calm and conversational.
+    style: Easy-going
+    glyph: "◌"
+    color: 33
+    realizations:
+      gemini:
+        voice: Callirrhoe
+      gcloud:
+        voice: en-US-Chirp3-HD-Callirrhoe
+        language_code: en-US
+      kokoro:
+        voice: af_sky
+
+  autonoe:
+    intent: Bright, lively — sunny and energetic.
+    style: Bright
+    glyph: "◊"
+    color: 36
+    realizations:
+      gemini:
+        voice: Autonoe
+      gcloud:
+        voice: en-US-Chirp3-HD-Autonoe
+        language_code: en-US
+
+  enceladus:
+    intent: Breathy, intimate — soft and close.
+    style: Breathy
+    glyph: "◦"
+    color: 35
+    realizations:
+      gemini:
+        voice: Enceladus
+      gcloud:
+        voice: en-US-Chirp3-HD-Enceladus
+        language_code: en-US
+
+  iapetus:
+    intent: Clear, articulate — precise and legible.
+    style: Clear
+    glyph: "▫"
+    color: 34
+    realizations:
+      gemini:
+        voice: Iapetus
+      gcloud:
+        voice: en-US-Chirp3-HD-Iapetus
+        language_code: en-US
+
+  umbriel:
+    intent: Easy-going, mellow — laid-back and warm.
+    style: Easy-going
+    glyph: "◍"
+    color: 32
+    realizations:
+      gemini:
+        voice: Umbriel
+      gcloud:
+        voice: en-US-Chirp3-HD-Umbriel
+        language_code: en-US
+
+  algieba:
+    intent: Smooth, polished — even and refined.
+    style: Smooth
+    glyph: "●"
+    color: 33
+    realizations:
+      gemini:
+        voice: Algieba
+      gcloud:
+        voice: en-US-Chirp3-HD-Algieba
+        language_code: en-US
+
+  despina:
+    intent: Smooth, gentle — silky and unforced.
+    style: Smooth
+    glyph: "◐"
+    color: 35
+    realizations:
+      gemini:
+        voice: Despina
+      gcloud:
+        voice: en-US-Chirp3-HD-Despina
+        language_code: en-US
+
+  erinome:
+    intent: Clear, bright — distinct and crisp.
+    style: Clear
+    glyph: "◑"
+    color: 36
+    realizations:
+      gemini:
+        voice: Erinome
+      gcloud:
+        voice: en-US-Chirp3-HD-Erinome
+        language_code: en-US
+
+  algenib:
+    intent: Gravelly, textured — rough-edged and characterful.
+    style: Gravelly
+    glyph: "▲"
+    color: 31
+    realizations:
+      gemini:
+        voice: Algenib
+      gcloud:
+        voice: en-US-Chirp3-HD-Algenib
+        language_code: en-US
+
+  rasalgethi:
+    intent: Informative, deliberate — explanatory and clear.
+    style: Informative
+    glyph: "◒"
+    color: 34
+    realizations:
+      gemini:
+        voice: Rasalgethi
+      gcloud:
+        voice: en-US-Chirp3-HD-Rasalgethi
+        language_code: en-US
+
+  laomedeia:
+    intent: Upbeat, spirited — bright and forward.
+    style: Upbeat
+    glyph: "◓"
+    color: 33
+    realizations:
+      gemini:
+        voice: Laomedeia
+      gcloud:
+        voice: en-US-Chirp3-HD-Laomedeia
+        language_code: en-US
+
+  achernar:
+    intent: Soft, gentle — quiet and tender.
+    style: Soft
+    glyph: "◔"
+    color: 35
+    realizations:
+      gemini:
+        voice: Achernar
+      gcloud:
+        voice: en-US-Chirp3-HD-Achernar
+        language_code: en-US
+
+  alnilam:
+    intent: Firm, decisive — strong and direct.
+    style: Firm
+    glyph: "◕"
+    color: 31
+    realizations:
+      gemini:
+        voice: Alnilam
+      gcloud:
+        voice: en-US-Chirp3-HD-Alnilam
+        language_code: en-US
+
+  schedar:
+    intent: Even, balanced — steady and neutral.
+    style: Even
+    glyph: "◖"
+    color: 34
+    realizations:
+      gemini:
+        voice: Schedar
+      gcloud:
+        voice: en-US-Chirp3-HD-Schedar
+        language_code: en-US
+
+  gacrux:
+    intent: Mature, seasoned — weighty and assured.
+    style: Mature
+    glyph: "◗"
+    color: 32
+    realizations:
+      gemini:
+        voice: Gacrux
+      gcloud:
+        voice: en-US-Chirp3-HD-Gacrux
+        language_code: en-US
+
+  pulcherrima:
+    intent: Forward, assertive — bold and present.
+    style: Forward
+    glyph: "◘"
+    color: 35
+    realizations:
+      gemini:
+        voice: Pulcherrima
+      gcloud:
+        voice: en-US-Chirp3-HD-Pulcherrima
+        language_code: en-US
+
+  achird:
+    intent: Friendly, approachable — warm and welcoming.
+    style: Friendly
+    glyph: "◙"
+    color: 33
+    realizations:
+      gemini:
+        voice: Achird
+      gcloud:
+        voice: en-US-Chirp3-HD-Achird
+        language_code: en-US
+
+  zubenelgenubi:
+    intent: Casual, conversational — relaxed and natural.
+    style: Casual
+    glyph: "◚"
+    color: 32
+    realizations:
+      gemini:
+        voice: Zubenelgenubi
+      gcloud:
+        voice: en-US-Chirp3-HD-Zubenelgenubi
+        language_code: en-US
+
+  vindemiatrix:
+    intent: Gentle, soothing — calm and reassuring.
+    style: Gentle
+    glyph: "◛"
+    color: 35
+    realizations:
+      gemini:
+        voice: Vindemiatrix
+      gcloud:
+        voice: en-US-Chirp3-HD-Vindemiatrix
+        language_code: en-US
+
+  sadachbia:
+    intent: Lively, animated — bright and engaged.
+    style: Lively
+    glyph: "◜"
+    color: 33
+    realizations:
+      gemini:
+        voice: Sadachbia
+      gcloud:
+        voice: en-US-Chirp3-HD-Sadachbia
+        language_code: en-US
+
+  sadaltager:
+    intent: Knowledgeable, expert — authoritative and clear.
+    style: Knowledgeable
+    glyph: "◝"
+    color: 34
+    realizations:
+      gemini:
+        voice: Sadaltager
+      gcloud:
+        voice: en-US-Chirp3-HD-Sadaltager
+        language_code: en-US
+
+  sulafat:
+    intent: Warm, inviting — rich and friendly.
+    style: Warm
+    glyph: "◞"
+    color: 31
+    realizations:
+      gemini:
+        voice: Sulafat
+      gcloud:
+        voice: en-US-Chirp3-HD-Sulafat
+        language_code: en-US
