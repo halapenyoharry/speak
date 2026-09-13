@@ -23,9 +23,12 @@ chmod +x ~/.local/bin/speak
 - `python3` (for JSON handling)
 - `ffmpeg` / `ffprobe` (audio conversion)
 - A Gemini API key — get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- (Optional) An OpenRouter API key if you want to use OpenRouter models for narration optimization.
 
 ```bash
 export GEMINI_API_KEY="your-key-here"
+# Optional:
+export OPENROUTER_API_KEY="your-openrouter-key"
 ```
 
 ## Usage
@@ -144,14 +147,17 @@ Tags are not limited to this list. The model interprets natural language, so `[l
 Config lives at `~/.config/speak/config`:
 
 ```ini
-voice=Puck
-tts_model=gemini-3.1-flash-tts-preview
-optimize_model=gemini-2.5-flash
+engine=gemini
+persona=puck
+optimizer_provider=gemini
+optimizer_model=gemini-2.5-flash
 ```
 
 ```bash
-speak set                    # view current config
-speak set voice Charon       # change default voice
+speak set                                      # view current config
+speak set persona Kore                         # change default persona
+speak set optimizer_provider openrouter        # switch to OpenRouter optimizer
+speak set optimizer_model openrouter/free      # use free OpenRouter model
 ```
 
 ## How it works

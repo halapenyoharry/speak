@@ -177,6 +177,9 @@ else:
                 errors.append(f"engines.yaml: optimizer missing `{k}`")
         if opt.get("provides_capability") != "audio-tags":
             errors.append("engines.yaml: optimizer.provides_capability must be `audio-tags`")
+        provs = opt.get("providers")
+        if provs is not None and not isinstance(provs, dict):
+            errors.append("engines.yaml: optimizer.providers must be a mapping")
 
     eng = engines.get("engines")
     if not isinstance(eng, dict):
@@ -308,11 +311,12 @@ PYEOF
 }
 
 # ── Config management ────────────────────────────────────────────────
-# New schema keys: engine, persona, model_overrides.<engine>, optimizer_model.
+# New schema keys: engine, persona, model_overrides.<engine>, optimizer_provider, optimizer_model.
 # Comment-tolerant key=value reader (behavior #13a). Defaults sourced from data.
 load_config() {
   CFG_ENGINE=""
   CFG_PERSONA=""
+  CFG_OPTIMIZER_PROVIDER=""
   CFG_OPTIMIZER_MODEL=""
   # Per-engine model overrides stored as model_overrides.<engine>=<model>.
   # Kept as plain scalars (bash 3.2-compatible; no associative arrays) since
@@ -328,6 +332,7 @@ load_config() {
       case "$key" in
         engine) CFG_ENGINE="$value" ;;
         persona) CFG_PERSONA="$value" ;;
+        optimizer_provider) CFG_OPTIMIZER_PROVIDER="$value" ;;
         optimizer_model) CFG_OPTIMIZER_MODEL="$value" ;;
         model_overrides.gemini) CFG_MODEL_OVERRIDE_gemini="$value" ;;
         model_overrides.gcloud) CFG_MODEL_OVERRIDE_gcloud="$value" ;;
@@ -337,9 +342,20 @@ load_config() {
   fi
   # Defaults pulled from the validated data files.
   DATA_DEFAULT_PERSONA="$(yaml_query "$VOICES_YAML" 'd.get("default_persona","puck")')"
+  OPTIMIZER_DEFAULT_PROVIDER="$(yaml_query "$ENGINES_YAML" 'd.get("optimizer",{}).get("default_provider","gemini")')"
+  OPTIMIZER_PROVIDER="${CFG_OPTIMIZER_PROVIDER:-$OPTIMIZER_DEFAULT_PROVIDER}"
+
   OPTIMIZER_MODEL="$(yaml_query "$ENGINES_YAML" 'd["optimizer"]["model"]')"
   if [[ -n "$CFG_OPTIMIZER_MODEL" ]]; then
     OPTIMIZER_MODEL="$CFG_OPTIMIZER_MODEL"
+  elif [[ "$OPTIMIZER_PROVIDER" == "openrouter" ]]; then
+    local or_def; or_def="$(yaml_query "$ENGINES_YAML" 'd.get("optimizer",{}).get("providers",{}).get("openrouter",{}).get("default_model","openrouter/free")')"
+    [[ -n "$or_def" ]] && OPTIMIZER_MODEL="$or_def"
+  fi
+
+  # Auto-detection: if model slug contains "/" and provider was not explicitly configured, infer openrouter
+  if [[ -z "$CFG_OPTIMIZER_PROVIDER" && "$OPTIMIZER_MODEL" == *"/"* ]]; then
+    OPTIMIZER_PROVIDER="openrouter"
   fi
   return 0
 }
@@ -735,8 +751,9 @@ cmd_set() {
     fi
     echo "" >&2
     local mdl; mdl="$(resolve_model "$ENGINE" "")"
-    echo -e "  model           ${DIM}${mdl:-<engine default>}${RESET}" >&2
-    echo -e "  optimizer_model ${DIM}${OPTIMIZER_MODEL}${RESET}" >&2
+    echo -e "  model              ${DIM}${mdl:-<engine default>}${RESET}" >&2
+    echo -e "  optimizer_provider ${DIM}${OPTIMIZER_PROVIDER}${RESET}" >&2
+    echo -e "  optimizer_model    ${DIM}${OPTIMIZER_MODEL}${RESET}" >&2
     local oe
     for oe in gemini gcloud kokoro; do
       local ov; ov="$(model_override_for "$oe")"
@@ -782,14 +799,26 @@ cmd_set() {
       save_config_value "model_overrides.${target_engine}" "$model_val"
       echo -e "${GREEN}✓${RESET} model_overrides.${target_engine} set to ${BOLD}${model_val}${RESET}" >&2
       ;;
+    optimizer_provider)
+      if [[ "$value" != "gemini" && "$value" != "openrouter" ]]; then
+        err "Invalid optimizer provider: '${value:-}'. Must be one of: gemini, openrouter"
+        exit 1
+      fi
+      save_config_value "optimizer_provider" "$value"
+      echo -e "${GREEN}✓${RESET} optimizer_provider set to ${BOLD}${value}${RESET}" >&2
+      ;;
     optimizer_model)
       [[ -z "$value" ]] && { err "Usage: speak set optimizer_model <model>"; exit 1; }
       save_config_value "optimizer_model" "$value"
+      if [[ "$value" == *"/"* && "$OPTIMIZER_PROVIDER" != "openrouter" ]]; then
+        save_config_value "optimizer_provider" "openrouter"
+        echo -e "${GREEN}✓${RESET} optimizer_provider automatically updated to ${BOLD}openrouter${RESET}" >&2
+      fi
       echo -e "${GREEN}✓${RESET} optimizer_model set to ${BOLD}${value}${RESET}" >&2
       ;;
     *)
       err "Unknown config key: $key"
-      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_model${RESET}" >&2
+      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_provider, optimizer_model${RESET}" >&2
       exit 1
       ;;
   esac
@@ -816,6 +845,8 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -s, --show [MODE]             Play with visual display (wave or spec)
         --stdout                  Write WAV audio to stdout (for piping)
         --json                    Output JSON metadata + base64 audio to stdout
+        --optimizer-provider PROV Optimizer provider: gemini | openrouter
+        --optimizer-model MODEL   Optimizer model (e.g. openrouter/free)
         --help                    Show this help
         --version                 Show version
 
@@ -826,10 +857,13 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak -m fast "Faster Gemini TTS model"
     speak -v Kore -c                Speak clipboard with the Kore persona
     speak -r "Already tagged [whispers] text"
+    speak --optimizer-provider openrouter --optimizer-model openrouter/free "Test"
     speak -o narrated.wav < chapter.txt
     cat essay.md | speak -v Charon -o essay.wav
     speak set engine gcloud         Default to Google Cloud Chirp 3 HD
     speak set persona Kore          Change default persona
+    speak set optimizer_provider openrouter
+    speak set optimizer_model openrouter/free
     speak voices                    Personas for the active engine
     speak voices --all              Persona × engine coverage grid
     speak -s "check this"           Play with waveform display
@@ -842,14 +876,16 @@ $(echo -e "${BOLD}AUDIO TAGS${RESET}")  $(echo -e "${DIM}(applied by the optimiz
     [laughs]    [sighs]    [pause]    [shouting] [sarcastic]
 
 $(echo -e "${BOLD}ENVIRONMENT${RESET}")
-    GEMINI_API_KEY                Required for gemini synthesis and for the optimizer.
+    GEMINI_API_KEY                Required for gemini synthesis and Gemini optimizer.
+    OPENROUTER_API_KEY            Required when using OpenRouter optimizer.
                                   A bare kokoro run needs no key (optimizer is skipped).
 
 $(echo -e "${BOLD}CONFIG${RESET}")  $(echo -e "${DIM}(~/.config/speak/config)${RESET}")
     engine=gemini                 Active engine
     persona=puck                  Default persona
     model_overrides.gemini=…      Per-engine model override
-    optimizer_model=gemini-2.5-flash
+    optimizer_provider=gemini     Optimizer provider (gemini | openrouter)
+    optimizer_model=...           Optimizer model (e.g. gemini-2.5-flash or openrouter/free)
 
 EOF
 }
@@ -906,22 +942,82 @@ print(json.dumps(chunks))
 }
 
 # ── Optimizer (narration director) ───────────────────────────────────
-# Gated on the ACTIVE engine's audio-tags capability AND GEMINI_API_KEY.
-# The optimizer is itself a Gemini text call (engines.yaml optimizer.model).
+# Gated on the ACTIVE engine's audio-tags capability AND (GEMINI_API_KEY or OPENROUTER_API_KEY).
+# Supports provider=gemini (Google generateContent) and provider=openrouter (OpenAI chat/completions).
 # Echoes the optimized transcript on stdout; writes "p/c" token string to the
 # file named by $1. Returns nonzero on failure.
 run_optimizer() {
   local tokens_out="$1" input_text="$2"
-  local api_base; api_base="$(engine_field gemini endpoint)"
+  local provider="${3:-$OPTIMIZER_PROVIDER}"
+  local model="${4:-$OPTIMIZER_MODEL}"
 
-  local combined_text="You are a narration director. Given the following text, produce an optimized transcript for text-to-speech narration by a single speaker.
+  local director_instructions="You are a narration director. Given the following text, produce an optimized transcript for text-to-speech narration by a single speaker.
 
 Rules:
 - Keep ALL original content and meaning intact. Do not summarize or cut.
 - Add audio tags in square brackets where they improve delivery: [pause], [slowly], [excited], [whispers], [serious], [warmly], etc.
 - Add natural pacing cues.
 - If the text is prose or an article, add a brief style and pace direction at the top.
-- Output ONLY the optimized transcript. No explanations, no markdown fences.
+- Output ONLY the optimized transcript. No explanations, no markdown fences."
+
+  if [[ "$provider" == "openrouter" ]]; then
+    local req_body
+    req_body=$("$PYTHON" -c "
+import json, sys
+sys_prompt = sys.argv[1]
+user_text = sys.argv[2]
+model_name = sys.argv[3]
+payload = {
+    'model': model_name,
+    'messages': [
+        {'role': 'system', 'content': sys_prompt},
+        {'role': 'user', 'content': user_text}
+    ],
+    'temperature': 0.7
+}
+print(json.dumps(payload))
+" "$director_instructions" "$input_text" "$model")
+
+    local narration_response
+    narration_response=$(curl -s "https://openrouter.ai/api/v1/chat/completions" \
+      -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -H "HTTP-Referer: https://github.com/haroldyoung/speak" \
+      -H "X-Title: speak" \
+      -d "$req_body")
+
+    local transcript
+    transcript=$(echo "$narration_response" | "$PYTHON" -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    if isinstance(data, dict) and 'error' in data:
+        err_msg = data['error'].get('message', json.dumps(data['error']))
+        print('OpenRouter Error: ' + str(err_msg), file=sys.stderr)
+        sys.exit(1)
+    text = data['choices'][0]['message']['content']
+    print(text)
+except (KeyError, IndexError, TypeError):
+    print('Error parsing OpenRouter response: ' + json.dumps(data, indent=2), file=sys.stderr)
+    sys.exit(1)
+") || return 1
+
+    echo "$narration_response" | "$PYTHON" -c "
+import json, sys
+data = json.load(sys.stdin)
+try:
+    u = data.get('usage', {})
+    print(f\"{u.get('prompt_tokens', '?')}/{u.get('completion_tokens', '?')}\")
+except: print('?/?')
+" > "$tokens_out" 2>/dev/null || echo "?/?" > "$tokens_out"
+
+    printf '%s' "$transcript"
+    return 0
+  fi
+
+  # Default: Gemini provider
+  local api_base; api_base="$(engine_field gemini endpoint)"
+  local combined_text="${director_instructions}
 
 TEXT TO OPTIMIZE:
 ${input_text}"
@@ -930,7 +1026,7 @@ ${input_text}"
   escaped_combined=$(json_escape "$combined_text")
 
   local narration_response
-  narration_response=$(curl -s "${api_base}/${OPTIMIZER_MODEL}:generateContent" \
+  narration_response=$(curl -s "${api_base}/${model}:generateContent" \
     -H "x-goog-api-key: ${GEMINI_API_KEY}" \
     -H "Content-Type: application/json" \
     -d "{
@@ -945,12 +1041,21 @@ ${input_text}"
   local transcript
   transcript=$(echo "$narration_response" | "$PYTHON" -c "
 import json, sys
-data = json.load(sys.stdin)
+raw = sys.stdin.read()
+try:
+    data = json.loads(raw)
+except Exception:
+    print('Gemini API Error: ' + raw.strip()[:200], file=sys.stderr)
+    sys.exit(1)
+if isinstance(data, dict) and 'error' in data:
+    err_msg = data['error'].get('message', json.dumps(data['error']))
+    print('Gemini API Error: ' + str(err_msg), file=sys.stderr)
+    sys.exit(1)
 try:
     text = data['candidates'][0]['content']['parts'][0]['text']
     print(text)
-except (KeyError, IndexError):
-    print('Error: ' + json.dumps(data, indent=2), file=sys.stderr)
+except (KeyError, IndexError, TypeError):
+    print('Error parsing Gemini response: ' + json.dumps(data, indent=2), file=sys.stderr)
     sys.exit(1)
 ") || return 1
 
@@ -979,6 +1084,8 @@ cmd_speak() {
   local use_stdout=false
   local json_out=false
   local show_mode=""
+  local optimizer_provider_flag=""
+  local optimizer_model_flag=""
 
   # Parse options (clean-slate CLI surface). No -g/-k/-f/--no-gcloud;
   # mutual-exclusion guard deleted by construction (single engine value).
@@ -1004,6 +1111,8 @@ cmd_speak() {
       -q|--quiet) quiet=true; shift ;;
       --stdout) use_stdout=true; play=false; quiet=true; shift ;;
       --json) json_out=true; play=false; quiet=true; shift ;;
+      --optimizer-provider|--opt-provider) optimizer_provider_flag="$2"; shift 2 ;;
+      --optimizer-model|--opt-model) optimizer_model_flag="$2"; shift 2 ;;
       -s|--show)
         case "${2:-}" in
           wave|waveform|spec|spectrogram) show_mode="$2"; shift 2 ;;
@@ -1062,18 +1171,60 @@ cmd_speak() {
   # Resolve concrete model id (key→id; precedence handled in resolve_model).
   local model_id; model_id="$(resolve_model "$engine" "$model_flag")"
 
-  # Optimizer gating: fire IFF active engine lists audio-tags AND GEMINI_API_KEY
-  # set. Under gcloud/kokoro (empty capabilities) the optimizer is SKIPPED
+  # Resolve optimizer provider & model
+  local opt_provider="$OPTIMIZER_PROVIDER"
+  [[ -n "$optimizer_provider_flag" ]] && opt_provider="$optimizer_provider_flag"
+  local opt_model="$OPTIMIZER_MODEL"
+  [[ -n "$optimizer_model_flag" ]] && opt_model="$optimizer_model_flag"
+
+  # Auto-detection: if model slug contains "/" and provider was not explicitly flagged, use openrouter
+  if [[ -z "$optimizer_provider_flag" && "$opt_model" == *"/"* ]]; then
+    opt_provider="openrouter"
+  fi
+
+  if [[ "$opt_provider" != "gemini" && "$opt_provider" != "openrouter" ]]; then
+    err "Invalid optimizer provider: '${opt_provider}'. Must be 'gemini' or 'openrouter'"
+    exit 1
+  fi
+
+  # Harmonize model slug with provider
+  if [[ "$opt_provider" == "gemini" ]]; then
+    if [[ "$opt_model" == google/* ]]; then
+      opt_model="${opt_model#google/}"
+    elif [[ "$opt_model" == *"/"* ]]; then
+      opt_model="$(yaml_query "$ENGINES_YAML" 'd["optimizer"]["model"]')"
+    fi
+  elif [[ "$opt_provider" == "openrouter" ]]; then
+    if [[ "$opt_model" == "gemini-2.5-flash" ]]; then
+      opt_model="google/gemini-2.5-flash"
+    elif [[ "$opt_model" != *"/"* ]]; then
+      local or_def; or_def="$(yaml_query "$ENGINES_YAML" 'd.get("optimizer",{}).get("providers",{}).get("openrouter",{}).get("default_model","openrouter/free")')"
+      opt_model="${or_def:-openrouter/free}"
+    fi
+  fi
+
+  # Optimizer gating: fire IFF active engine lists audio-tags AND required API key set.
+  # Under gcloud/kokoro (empty capabilities) the optimizer is SKIPPED
   # entirely — kokoro is offline by default, no key required. (behavior #12 —
   # deliberate behavior CHANGE from the old kokoro-without-raw path.)
   local do_optimize=false
   if [[ "$raw" == false ]] && engine_has_audio_tags "$engine"; then
-    if [[ -n "${GEMINI_API_KEY:-}" ]]; then
-      do_optimize=true
+    if [[ "$opt_provider" == "openrouter" ]]; then
+      if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
+        do_optimize=true
+      else
+        err "OPENROUTER_API_KEY not set (required for OpenRouter optimizer)."
+        echo -e "${DIM}export OPENROUTER_API_KEY=\"your-key-here\"   (or use -r to skip optimization)${RESET}" >&2
+        exit 1
+      fi
     else
-      err "GEMINI_API_KEY not set (required to optimize for engine '${engine}')."
-      echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"   (or use -r to skip optimization)${RESET}" >&2
-      exit 1
+      if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+        do_optimize=true
+      else
+        err "GEMINI_API_KEY not set (required to optimize for engine '${engine}')."
+        echo -e "${DIM}export GEMINI_API_KEY=\"your-key-here\"   (or use -r to skip optimization)${RESET}" >&2
+        exit 1
+      fi
     fi
   fi
 
@@ -1152,9 +1303,9 @@ cmd_speak() {
   local transcript=""
   local optimize_tokens=""
   if [[ "$do_optimize" == true ]]; then
-    echo -ne "  ${GRAY}optimizing...${RESET}" >&2
+    echo -ne "  ${GRAY}optimizing (${opt_provider})...${RESET}" >&2
     local opt_tok_file="${tmpdir}/opt.tokens"
-    if ! transcript=$(run_optimizer "$opt_tok_file" "$input_text"); then
+    if ! transcript=$(run_optimizer "$opt_tok_file" "$input_text" "$opt_provider" "$opt_model"); then
       echo -ne "\r\033[K" >&2
       err "Narration optimization failed"
       exit 1

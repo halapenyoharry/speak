@@ -21,15 +21,24 @@
 # There is no fallback engine, no nearest-voice, no default realization here.
 
 # ── Top-level optimizer (narration director) ─────────────────────────
-# NOT a TTS model: a text-mode Gemini call that rewrites input into an
-# audio-tag-annotated transcript. It authenticates against Gemini INDEPENDENT
-# of the active synthesis engine — engine=gcloud with optimization still needs
-# GEMINI_API_KEY, because the optimizer itself is a Gemini call. But it only
-# RUNS for engines that consume audio-tags (currently just gemini).
+# NOT a TTS model: a text-mode LLM call (Gemini or OpenRouter) that rewrites
+# input into an audio-tag-annotated transcript. It authenticates INDEPENDENT
+# of the active synthesis engine (GEMINI_API_KEY or OPENROUTER_API_KEY).
+# It only RUNS for engines that consume audio-tags (currently gemini).
 optimizer:
+  default_provider: gemini
   model: gemini-2.5-flash
   auth: gemini-api-key
   provides_capability: audio-tags
+  providers:
+    gemini:
+      default_model: gemini-2.5-flash
+      auth: gemini-api-key
+      endpoint: https://generativelanguage.googleapis.com/v1beta/models
+    openrouter:
+      default_model: openrouter/free
+      auth: openrouter-api-key
+      endpoint: https://openrouter.ai/api/v1/chat/completions
 
 # ── Engines (keyed by config-value) ──────────────────────────────────
 engines:
