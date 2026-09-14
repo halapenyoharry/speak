@@ -39,7 +39,7 @@ def get_device():
     return "cpu"
 
 
-def check_disk_space(min_gb_required=2.0):
+def check_disk_space(min_gb_required=4.0):
     """Ensure at least min_gb_required GB free before downloading/generating."""
     try:
         stat = shutil.disk_usage(os.path.expanduser("~"))
@@ -98,7 +98,7 @@ def main():
 
     # Pre-flight disk check
     try:
-        check_disk_space(min_gb_required=2.0)
+        check_disk_space(min_gb_required=4.0)
     except Exception as e:
         fail(str(e))
 
