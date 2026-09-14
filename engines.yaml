@@ -140,6 +140,7 @@ engines:
     # DATA, never by inspecting the bf_/bm_ string prefix. en-gb voices are the
     # British (b*) set; en-us are the American (a*) set.
     native_voices:
+      am_puck:      { language_code: en-us }
       am_adam:      { language_code: en-us }
       am_michael:   { language_code: en-us }
       af_bella:     { language_code: en-us }

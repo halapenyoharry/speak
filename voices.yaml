@@ -56,11 +56,7 @@ personas:
         voice: en-US-Chirp3-HD-Puck
         language_code: en-US
       kokoro:
-        blend:
-          - voice: am_adam
-            weight: 0.5
-          - voice: am_michael
-            weight: 0.5
+        voice: am_puck
 
   charon:
     intent: Informative, measured — reads like a knowledgeable narrator.
