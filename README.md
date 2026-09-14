@@ -83,6 +83,18 @@ speak --json "some text" | jq .duration_seconds
 speak -r --json "text" | jq -r .audio_wav_base64 | base64 -d > out.wav
 ```
 
+## Fast Local Responses (`speak daemon`)
+
+When running offline models (especially Bark, which has 1.6 GB neural audio weights), `speak` can keep the model weights resident in Apple Silicon unified memory to eliminate cold startup delays:
+
+```bash
+speak daemon start all          # Pre-load Kokoro & Bark into memory
+speak daemon status             # View memory residency and daemon status
+speak daemon stop all           # Unload models and free memory
+```
+
+With the daemon active, speech synthesis starts almost instantly. If the daemon is stopped, `speak` automatically falls back to standard execution without errors.
+
 ## Long text and chunking
 
 For text over ~500 words, `speak` automatically splits at paragraph boundaries, generates audio for each chunk in parallel, and concatenates the results. This avoids API size limits and quality drift on long outputs.

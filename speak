@@ -827,6 +827,167 @@ cmd_set() {
   esac
 }
 
+# ── Persistent Model Daemons (Fast Local Response) ───────────────────
+cmd_daemon() {
+  local action="${1:-status}"
+  local target="${2:-all}"
+
+  daemon_pid() {
+    local name="$1"
+    local pid_file="${CONFIG_DIR}/${name}.pid"
+    if [[ -f "$pid_file" ]]; then
+      local p; p=$(cat "$pid_file" 2>/dev/null | xargs)
+      if [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; then
+        echo "$p"
+        return 0
+      fi
+    fi
+    return 1
+  }
+
+  daemon_status_one() {
+    local name="$1" label="$2"
+    local pid; pid=$(daemon_pid "$name" || true)
+    local sock="${CONFIG_DIR}/${name}.sock"
+    if [[ -n "$pid" && -S "$sock" ]]; then
+      local mem
+      mem=$(ps -o rss= -p "$pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}' || echo "")
+      echo -e "  ${BOLD}${label}${RESET}  ${GREEN}● running${RESET}  ${DIM}(pid: ${pid}${mem:+, mem: ${mem}})${RESET}" >&2
+    elif [[ -n "$pid" ]]; then
+      echo -e "  ${BOLD}${label}${RESET}  ${YELLOW}▲ starting / busy${RESET}  ${DIM}(pid: ${pid})${RESET}" >&2
+    else
+      echo -e "  ${BOLD}${label}${RESET}  ${DIM}○ stopped${RESET}" >&2
+    fi
+  }
+
+  daemon_start_one() {
+    local name="$1" label="$2" script="$3"
+    mkdir -p "$CONFIG_DIR"
+    local pid; pid=$(daemon_pid "$name" || true)
+    if [[ -n "$pid" ]]; then
+      echo -e "  ${label} is already running ${DIM}(pid: ${pid})${RESET}" >&2
+      return 0
+    fi
+    echo -ne "  Starting ${BOLD}${label}${RESET} in background... " >&2
+    local log_file="${CONFIG_DIR}/${name}_daemon.log"
+    "$PYTHON" "$script" > "$log_file" 2>&1 &
+    local new_pid=$!
+    # Wait up to 15s for socket
+    local sock="${CONFIG_DIR}/${name}.sock"
+    local waited=0
+    while [[ $waited -lt 15 ]]; do
+      if [[ -S "$sock" ]]; then
+        echo -e "${GREEN}✓ done${RESET} ${DIM}(pid: ${new_pid})${RESET}" >&2
+        return 0
+      fi
+      if ! kill -0 "$new_pid" 2>/dev/null; then
+        echo -e "${RED}✗ failed${RESET}" >&2
+        cat "$log_file" >&2
+        return 1
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if [[ -S "$sock" ]]; then
+      echo -e "${GREEN}✓ done${RESET} ${DIM}(pid: ${new_pid})${RESET}" >&2
+    else
+      echo -e "${YELLOW}started in background${RESET} ${DIM}(initializing... check 'speak daemon status')${RESET}" >&2
+    fi
+  }
+
+  daemon_stop_one() {
+    local name="$1" label="$2"
+    local pid_file="${CONFIG_DIR}/${name}.pid"
+    local sock_file="${CONFIG_DIR}/${name}.sock"
+    local pid; pid=$(daemon_pid "$name" || true)
+    if [[ -z "$pid" ]]; then
+      rm -f "$pid_file" "$sock_file" 2>/dev/null
+      echo -e "  ${label} is not running." >&2
+      return 0
+    fi
+    echo -ne "  Stopping ${label} (pid ${pid})... " >&2
+    kill -15 "$pid" 2>/dev/null || true
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 5 ]]; do
+      sleep 0.5
+      waited=$((waited + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pid_file" "$sock_file" 2>/dev/null
+    echo -e "${GREEN}✓ stopped${RESET}" >&2
+  }
+
+  case "$action" in
+    status)
+      header
+      echo "" >&2
+      echo -e "${BOLD}Local Model Daemons${RESET}  ${DIM}(keeping weights resident in memory for faster responses)${RESET}" >&2
+      echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
+      daemon_status_one "kokoro" "Kokoro TTS"
+      daemon_status_one "bark" "Suno Bark"
+      echo "" >&2
+      echo -e "${DIM}Commands: speak daemon start [all|kokoro|bark] | speak daemon stop${RESET}" >&2
+      ;;
+    start)
+      header
+      echo "" >&2
+      echo -e "${BOLD}Starting Local Model Daemons...${RESET}" >&2
+      echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
+      case "$target" in
+        bark)
+          daemon_start_one "bark" "Suno Bark" "${ENGINES_DIR}/bark_daemon.py"
+          ;;
+        kokoro)
+          daemon_start_one "kokoro" "Kokoro TTS" "${ENGINES_DIR}/kokoro_daemon.py"
+          ;;
+        all|"")
+          daemon_start_one "kokoro" "Kokoro TTS" "${ENGINES_DIR}/kokoro_daemon.py"
+          daemon_start_one "bark" "Suno Bark" "${ENGINES_DIR}/bark_daemon.py"
+          ;;
+        *)
+          err "Unknown daemon target: $target. Choose: all, kokoro, or bark."
+          exit 1
+          ;;
+      esac
+      echo "" >&2
+      ;;
+    stop)
+      header
+      echo "" >&2
+      echo -e "${BOLD}Stopping Local Model Daemons...${RESET}" >&2
+      echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
+      case "$target" in
+        bark)
+          daemon_stop_one "bark" "Suno Bark"
+          ;;
+        kokoro)
+          daemon_stop_one "kokoro" "Kokoro TTS"
+          ;;
+        all|"")
+          daemon_stop_one "kokoro" "Kokoro TTS"
+          daemon_stop_one "bark" "Suno Bark"
+          ;;
+        *)
+          err "Unknown daemon target: $target. Choose: all, kokoro, or bark."
+          exit 1
+          ;;
+      esac
+      echo "" >&2
+      ;;
+    restart)
+      cmd_daemon stop "$target"
+      cmd_daemon start "$target"
+      ;;
+    *)
+      err "Unknown daemon action: $action. Choose: status, start, stop, or restart."
+      echo -e "${DIM}Usage: speak daemon [start|stop|restart|status] [all|kokoro|bark]${RESET}" >&2
+      exit 1
+      ;;
+  esac
+}
+
 cmd_help() {
   cat <<EOF
 
@@ -835,6 +996,7 @@ $(echo -e "${BOLD}${CYAN}speak${RESET} ${DIM}v${VERSION}${RESET}")  persona-driv
 $(echo -e "${BOLD}USAGE${RESET}")
     speak [options] [text]         Narrate text (optimizes when supported, then speaks)
     speak voices [--all]           List personas for the active engine (--all = coverage grid)
+    speak daemon [start|stop|stat] Keep local models warm in memory for faster responses
     speak set [key] [value]        View or change configuration
 
 $(echo -e "${BOLD}OPTIONS${RESET}")
@@ -864,16 +1026,21 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak --optimizer-provider openrouter --optimizer-model openrouter/free "Test"
     speak -o narrated.wav < chapter.txt
     cat essay.md | speak -v Charon -o essay.wav
-    speak set engine gcloud         Default to Google Cloud Chirp 3 HD
-    speak set persona Kore          Change default persona
-    speak set optimizer_provider openrouter
-    speak set optimizer_model openrouter/free
+    speak daemon start all          Pre-load local models (Kokoro & Bark) into memory
+    speak daemon status             Check local model memory residency
+    speak set engine kokoro         Default to offline Kokoro TTS
+    speak set persona Puck          Change default persona
     speak voices                    Personas for the active engine
     speak voices --all              Persona × engine coverage grid
     speak -s "check this"           Play with waveform display
     speak --show spec "text"        Play with spectrogram display
     speak --stdout "hello" | mpv -  Pipe audio to another process
     speak --json "hello" | jq .duration_seconds
+
+$(echo -e "${BOLD}DAEMON (FAST RESPONSES)${RESET}")  $(echo -e "${DIM}(keeps models resident in Apple Silicon memory)${RESET}")
+    speak daemon start [all|kokoro|bark]   Pre-load model weights into memory
+    speak daemon stop  [all|kokoro|bark]   Unload models and free memory
+    speak daemon status                    Check daemon status and memory footprint
 
 $(echo -e "${BOLD}AUDIO TAGS${RESET}")  $(echo -e "${DIM}(applied by the optimizer for tag-capable engines, or manually with -r)${RESET}")
     [whispers]  [excited]  [serious]  [warmly]  [slowly]
@@ -882,8 +1049,7 @@ $(echo -e "${BOLD}AUDIO TAGS${RESET}")  $(echo -e "${DIM}(applied by the optimiz
 $(echo -e "${BOLD}ENVIRONMENT${RESET}")
     GEMINI_API_KEY                Required for gemini synthesis and Gemini optimizer.
     OPENROUTER_API_KEY            Required when using OpenRouter optimizer.
-                                  A bare kokoro run needs no key (optimizer is skipped).
-                                  A bare bark run with -r needs no key.
+                                  Offline engines (kokoro, bark) need no API key when run with -r.
 
 $(echo -e "${BOLD}CONFIG${RESET}")  $(echo -e "${DIM}(~/.config/speak/config)${RESET}")
     engine=gemini                 Active engine
@@ -1608,6 +1774,7 @@ fi
 case "${1:-}" in
   voices)    shift; cmd_voices "${1:-}" ;;
   set)       shift; cmd_set "$@" ;;
+  daemon)    shift; cmd_daemon "$@" ;;
   --help)    cmd_help ;;
   --version) echo "speak v${VERSION}" ;;
   *)         cmd_speak "$@" ;;

@@ -151,6 +151,33 @@ def main():
     if not text.strip():
         fail("empty chunk text")
 
+    # Fast path: check if persistent Kokoro daemon is running
+    sock_path = os.path.expanduser("~/.config/speak/kokoro.sock")
+    if os.path.exists(sock_path):
+        try:
+            import socket, json
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(60.0)
+            s.connect(sock_path)
+            req = {
+                "text": text.strip(),
+                "realization": args.realization.strip(),
+                "output": out,
+                "language_code": args.language_code
+            }
+            s.sendall(json.dumps(req).encode("utf-8") + b"\n")
+            resp_raw = s.recv(4096).decode("utf-8")
+            s.close()
+            resp = json.loads(resp_raw)
+            if resp.get("status") == "ok":
+                if os.path.exists(err_path):
+                    os.remove(err_path)
+                sys.exit(0)
+            else:
+                eprint(f"  \033[33m[kokoro] daemon error: {resp.get('message')}, falling back to standalone...\033[0m")
+        except Exception:
+            pass
+
     # Resolve model file locations (auto-download on first use).
     model_dir = os.path.expanduser("~/.config/speak/models")
     try:
