@@ -5,8 +5,8 @@
 # import fails the driver MUST error with `pip3 install pyyaml` and never
 # silently degrade.
 #
-# There are EXACTLY THREE engines, keyed by their config-value: gemini, gcloud,
-# kokoro. Cloudflare / .wrangler/ is a deployment target, NOT a TTS engine — it
+# There are EXACTLY FOUR engines, keyed by their config-value: gemini, gcloud,
+# kokoro, bark. Cloudflare / .wrangler/ is a deployment target, NOT a TTS engine — it
 # is deliberately absent.
 #
 # `capabilities` is the SINGLE source of truth for optimizer gating. The
@@ -168,3 +168,48 @@ engines:
       - kind: model-file
         name: voices-v1.0.bin
         hint: 'auto-downloaded into ~/.config/speak/models on first use'
+
+  # ── Suno Bark (local neural audio generator) ──────────────────────
+  bark:
+    label: Suno Bark
+    deployment: offline-local
+    auth: none
+    # Bark natively generates prosody from bracketed audio tags
+    capabilities:
+      - audio-tags
+    default_model: default
+    models:
+      default: suno/bark-small
+      large: suno/bark
+    endpoint: null
+    output_format: wav
+    needs_transcode: false
+    voice_prefix: null
+    default_language_code: en-US
+    billing_unit: none
+    max_in_flight: 1
+    default_persona: puck
+    native_voices:
+      v2/en_speaker_0: { language_code: en-US }
+      v2/en_speaker_1: { language_code: en-US }
+      v2/en_speaker_2: { language_code: en-US }
+      v2/en_speaker_3: { language_code: en-US }
+      v2/en_speaker_4: { language_code: en-US }
+      v2/en_speaker_5: { language_code: en-US }
+      v2/en_speaker_6: { language_code: en-US }
+      v2/en_speaker_7: { language_code: en-US }
+      v2/en_speaker_8: { language_code: en-US }
+      v2/en_speaker_9: { language_code: en-US }
+    preconditions:
+      - kind: binary
+        name: python3
+        hint: 'python3 is required to run the bark adapter'
+      - kind: python-module
+        name: transformers
+        hint: 'pip3 install transformers torch soundfile scipy'
+      - kind: python-module
+        name: torch
+        hint: 'pip3 install torch'
+      - kind: python-module
+        name: soundfile
+        hint: 'pip3 install soundfile'

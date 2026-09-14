@@ -1,16 +1,16 @@
 # speak — engine adapter contract (CANONICAL)
 
 This file is **the law** that every adapter must satisfy. The driver (`speak`) and the
-three adapters (`engines/gemini.sh`, `engines/gcloud.sh`, `engines/kokoro.py`) agree on
+four adapters (`engines/gemini.sh`, `engines/gcloud.sh`, `engines/kokoro.py`, `engines/bark.py`) agree on
 exactly the interface specified here. If an adapter and this document disagree, the
 adapter is wrong.
 
-Scope: there are **exactly three** engines — `gemini`, `gcloud`, `kokoro`. No others.
+Scope: there are **four** engines — `gemini`, `gcloud`, `kokoro`, `bark`. No others.
 `.wrangler/` is not an engine and is out of scope.
 
 The contract is **language-agnostic**: a `.sh` adapter and a `.py` adapter satisfy the
 identical `text + realization → playable WAV + sidecars` convention. The driver invokes
-all three the same way; polymorphism lives only in the dispatch (`engines/<engine>.{sh,py}`),
+all four the same way; polymorphism lives only in the dispatch (`engines/<engine>.{sh,py}`),
 never in the calling convention.
 
 ---
@@ -46,8 +46,8 @@ required combination as a failure (§5). Order of flags is not significant.
 | `--realization <R>` | **yes** | The resolved realization (voice id or blend spec). See §1.1. | all |
 | `--output <WAV>` | **yes** | Absolute path where the adapter writes its single playable WAV. | all |
 | `--text <T>` | no | Chunk text passed as an argument (escape hatch). If absent, read text from **stdin**. See §2. | all |
-| `--model <M>` | no | Concrete model **id** (already resolved by the driver — never a key like `fast`). If absent, the adapter uses its own engine default. | gemini, gcloud (kokoro ignores) |
-| `--language-code <LC>` | no | BCP-47 locale (e.g. `en-US`, `en-GB`). Driver passes it from the realization/native-voice data. If absent, adapter falls back to its engine default. | gcloud, kokoro |
+| `--model <M>` | no | Concrete model **id** (already resolved by the driver — never a key like `fast`). If absent, the adapter uses its own engine default. | gemini, gcloud, bark (kokoro ignores) |
+| `--language-code <LC>` | no | BCP-47 locale (e.g. `en-US`, `en-GB`). Driver passes it from the realization/native-voice data. If absent, adapter falls back to its engine default. | gcloud, kokoro, bark |
 
 Rules:
 
@@ -84,6 +84,8 @@ Rules:
   The blend vector is `Σ (weight_i / Σweights) · style(voice_i)` — see behavior #18. Locale
   comes from `--language-code` (driver supplies it from `engines.yaml native_voices`), never
   from a `bf_`/`bm_` string-prefix guess.
+- **bark:** `<R>` is a Bark speaker preset string, e.g. `v2/en_speaker_6`, or path to a
+  custom voice embedding file (`.npz`). `--model` specifies checkpoint (`suno/bark-small` default).
 
 ---
 
@@ -112,6 +114,7 @@ Rules:
   | gemini | base64 PCM `s16le`, 24000 Hz, mono | decode b64 → `.pcm`, then **exactly** `ffmpeg -y -loglevel error -f s16le -ar 24000 -ac 1 -i <pcm> <out.wav>`, then remove the `.pcm`. This exact invocation is load-bearing **for gemini only** and MUST NOT be applied to the other two. |
   | gcloud | base64 `LINEAR16` | decode b64 straight to `<out.wav>` (Chirp3 LINEAR16 is already a WAV container). |
   | kokoro | float samples in memory | write `<out.wav>` via `soundfile` (e.g. `sf.write(out, audio, sample_rate)`). |
+  | bark   | float samples in memory | write `<out.wav>` via `soundfile` at 24000 Hz PCM_16. |
 
 - All chunk WAVs from a single run come from the **same engine**, so they share codec /
   sample-rate and the driver can `ffmpeg ... -c copy` concat them. The adapter must produce a
@@ -138,7 +141,7 @@ behavior #9):
 |---|---|---|
 | gemini | `<promptTokenCount>,<candidatesTokenCount>` | the TTS response `usageMetadata` (real token counts). |
 | gcloud | `<charcount>,0` | character count of the chunk text (gcloud bills by character; char-count is the proxy, completion is always `0`). |
-| kokoro | `local` | the literal string `local` (offline, no billing). The driver tolerates this non-numeric form and surfaces it verbatim. |
+| kokoro / bark | `local` | the literal string `local` (offline, no billing). The driver tolerates this non-numeric form and surfaces it verbatim. |
 
 The driver sums numeric `prompt`/`completion` across chunks for the `tts:<p>/<c>` summary
 and the `--json` `tokens.tts` field; for kokoro it passes `local` through unchanged.
@@ -200,10 +203,11 @@ parallel children is the load-bearing anti-pattern this avoids, behavior #11).
 | gemini | `GEMINI_API_KEY` | Sent as header `x-goog-api-key`. If empty → `CHUNK_ERROR:` + nonzero. |
 | gcloud | `GCLOUD_ACCESS_TOKEN`, `GCLOUD_PROJECT` | `Authorization: Bearer $GCLOUD_ACCESS_TOKEN`, `X-Goog-User-Project: $GCLOUD_PROJECT`. If `GCLOUD_ACCESS_TOKEN` empty, may re-resolve via `gcloud auth application-default print-access-token` (fallback `gcloud auth print-access-token`); if `GCLOUD_PROJECT` empty, may re-resolve via `gcloud config get-value project` with hardcoded fallback **`g-drive-474022`**. If still no token → `CHUNK_ERROR:gcloud authentication failed` + nonzero. |
 | kokoro | none required (fully offline) | No API key. May read its own model cache under `~/.config/speak/models/`. Auto-download of model binaries (if missing) is permitted but should be surfaced on stderr; downloads MUST use a verified TLS context (system trust / `certifi`), not an unverified SSL context. |
+| bark   | none required (fully offline) | No API key. Uses Hugging Face cache. Auto-download is permitted but checked against available disk space (requires >= 2.0 GB). |
 
-The optimizer (a separate Gemini call) is **never** invoked by an adapter. Optimization is a
+The optimizer (a separate Gemini or OpenRouter call) is **never** invoked by an adapter. Optimization is a
 driver concern gated on `capabilities` containing `audio-tags`; under kokoro it is skipped
-entirely, so a bare kokoro run needs no `GEMINI_API_KEY`.
+entirely, so a bare kokoro run needs no API key. A bare bark run with `-r` needs no key.
 
 ---
 
@@ -212,24 +216,24 @@ entirely, so a bare kokoro run needs no `GEMINI_API_KEY`.
 - **stdout from an adapter: reserved.** The driver owns the machine-output channel
   (`--stdout` raw WAV bytes, `--json` payload). An adapter MUST NOT write to stdout. Its WAV
   goes to `--output`; its metadata goes to sidecars.
-- **stderr: allowed for diagnostics only.** Progress, warnings, the kokoro download notice —
+- **stderr: allowed for diagnostics only.** Progress, warnings, the download notice —
   all to stderr. The driver's own progress/badges also go to stderr; adapter stderr should be
   minimal so it doesn't clutter the driver's chrome.
 
 ---
 
-## 8. Conformance checklist (all three must pass)
+## 8. Conformance checklist (all adapters must pass)
 
 - [ ] Accepts `--realization`, `--output`, optional `--text`/`--model`/`--language-code`; reads
       stdin when `--text` absent.
 - [ ] Writes exactly one **playable WAV** (never raw PCM) at `--output`; cleans up temp files.
 - [ ] gemini uses the exact `ffmpeg -f s16le -ar 24000 -ac 1` transcode; gcloud decodes
-      LINEAR16 directly; kokoro writes via soundfile. No engine uses another's path.
+      LINEAR16 directly; kokoro/bark write via soundfile. No engine uses another's path.
 - [ ] On success writes `<output>.tokens` = `prompt,completion` per the per-engine convention
-      (gemini real tokens, gcloud `<chars>,0`, kokoro `local`); writes no `.err`.
+      (gemini real tokens, gcloud `<chars>,0`, kokoro/bark `local`); writes no `.err`.
 - [ ] On failure writes `<output>.err` = `CHUNK_ERROR:<msg>` (single line), no WAV, no `.tokens`.
 - [ ] Exit `0` success / nonzero failure; never kills the parent; idempotent; touches only
       `--output` + sidecars.
 - [ ] Contains **no** fallback / nearest-voice / default-realization code path.
-- [ ] Reads auth from env (gemini key / gcloud token+project); kokoro needs none.
+- [ ] Reads auth from env (gemini key / gcloud token+project); kokoro/bark need none.
 - [ ] Writes nothing to stdout; diagnostics to stderr only.

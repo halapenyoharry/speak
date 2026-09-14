@@ -11,7 +11,7 @@
 #   engines.yaml  — engine capabilities/models/auth/format/concurrency/preconditions
 # Both are parsed + VALIDATED at startup via python3 + PyYAML (fail loud).
 #
-# THREE engines only: gemini | gcloud | kokoro. .wrangler/ is a deployment
+# FOUR engines only: gemini | gcloud | kokoro | bark. .wrangler/ is a deployment
 # target, NOT a TTS engine, and is deliberately untouched.
 set -euo pipefail
 
@@ -160,7 +160,7 @@ voices = load(voices_path, "voices.yaml")
 if errors:
     print("\n".join(errors)); sys.exit(2)
 
-VALID_ENGINES = {"gemini", "gcloud", "kokoro"}
+VALID_ENGINES = {"gemini", "gcloud", "kokoro", "bark"}
 VALID_FORMATS = {"pcm-s16le-24k-mono", "linear16", "wav"}
 VALID_BILLING = {"tokens", "characters", "none"}
 
@@ -320,10 +320,11 @@ load_config() {
   CFG_OPTIMIZER_MODEL=""
   # Per-engine model overrides stored as model_overrides.<engine>=<model>.
   # Kept as plain scalars (bash 3.2-compatible; no associative arrays) since
-  # there are exactly three known engines.
+  # there are exactly four known engines.
   CFG_MODEL_OVERRIDE_gemini=""
   CFG_MODEL_OVERRIDE_gcloud=""
   CFG_MODEL_OVERRIDE_kokoro=""
+  CFG_MODEL_OVERRIDE_bark=""
   if [[ -f "$CONFIG_FILE" ]]; then
     while IFS='=' read -r key value; do
       [[ -z "$key" || "$key" == \#* ]] && continue
@@ -337,6 +338,7 @@ load_config() {
         model_overrides.gemini) CFG_MODEL_OVERRIDE_gemini="$value" ;;
         model_overrides.gcloud) CFG_MODEL_OVERRIDE_gcloud="$value" ;;
         model_overrides.kokoro) CFG_MODEL_OVERRIDE_kokoro="$value" ;;
+        model_overrides.bark) CFG_MODEL_OVERRIDE_bark="$value" ;;
       esac
     done < "$CONFIG_FILE"
   fi
@@ -520,7 +522,7 @@ canonical_persona() {
 # Validate an engine id.
 engine_exists() {
   local e="$1"
-  case "$e" in gemini|gcloud|kokoro) return 0 ;; *) return 1 ;; esac
+  case "$e" in gemini|gcloud|kokoro|bark) return 0 ;; *) return 1 ;; esac
 }
 
 # Engines that DO realize a given persona (space-separated). For the
@@ -684,8 +686,8 @@ cmd_voices() {
 
   if [[ "$show_all" == true ]]; then
     echo -e "${BOLD}Persona × engine coverage${RESET}  ${DIM}(✓ realized · · unavailable)${RESET}" >&2
-    echo -e "${DIM}──────────────────────────────────────────────${RESET}" >&2
-    printf "  %-16s ${DIM}%-8s %-8s %-8s${RESET}\n" "persona" "gemini" "gcloud" "kokoro" >&2
+    echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
+    printf "  %-16s ${DIM}%-8s %-8s %-8s %-8s${RESET}\n" "persona" "gemini" "gcloud" "kokoro" "bark" >&2
     # iterate personas in file order
     local pid
     while IFS= read -r pid; do
@@ -693,12 +695,13 @@ cmd_voices() {
       local fields style glyph color
       fields="$(persona_fields "$pid")"
       IFS='|' read -r style glyph color <<< "$fields"
-      local g c k
-      g="·"; c="·"; k="·"
+      local g c k b
+      g="·"; c="·"; k="·"; b="·"
       has_realization "$pid" gemini && g="✓"
       has_realization "$pid" gcloud && c="✓"
       has_realization "$pid" kokoro && k="✓"
-      printf "  \033[${color}m${glyph} %-14s\033[0m %-8s %-8s %-8s\n" "$pid" "$g" "$c" "$k" >&2
+      has_realization "$pid" bark && b="✓"
+      printf "  \033[${color}m${glyph} %-14s\033[0m %-8s %-8s %-8s %-8s\n" "$pid" "$g" "$c" "$k" "$b" >&2
     done < <(yaml_query "$VOICES_YAML" "list(d['personas'].keys())")
     echo "" >&2
     echo -e "${DIM}Active engine: ${active_engine}. Realizations are declared in voices.yaml.${RESET}" >&2
@@ -755,7 +758,7 @@ cmd_set() {
     echo -e "  optimizer_provider ${DIM}${OPTIMIZER_PROVIDER}${RESET}" >&2
     echo -e "  optimizer_model    ${DIM}${OPTIMIZER_MODEL}${RESET}" >&2
     local oe
-    for oe in gemini gcloud kokoro; do
+    for oe in gemini gcloud kokoro bark; do
       local ov; ov="$(model_override_for "$oe")"
       [[ -n "$ov" ]] && echo -e "  ${DIM}override ${oe} = ${ov}${RESET}" >&2
     done
@@ -767,7 +770,7 @@ cmd_set() {
   case "$key" in
     engine)
       if [[ -z "$value" ]] || ! engine_exists "$value"; then
-        err "Invalid engine: '${value:-}'. Must be one of: gemini, gcloud, kokoro"
+        err "Invalid engine: '${value:-}'. Must be one of: gemini, gcloud, kokoro, bark"
         exit 1
       fi
       save_config_value "engine" "$value"
@@ -835,7 +838,7 @@ $(echo -e "${BOLD}USAGE${RESET}")
     speak set [key] [value]        View or change configuration
 
 $(echo -e "${BOLD}OPTIONS${RESET}")
-    -e, --engine ENGINE           Engine: gemini | gcloud | kokoro (default: ${ENGINE})
+    -e, --engine ENGINE           Engine: gemini | gcloud | kokoro | bark (default: ${ENGINE})
     -m, --model NAME              Model key (e.g. fast) or literal id (engine-scoped)
     -v, --voice PERSONA           Persona name (case-insensitive)
     -r, --raw                     Skip narration optimization, send text directly
@@ -854,6 +857,7 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak "Hello world"
     speak -e gcloud "Stable cloud narration"
     speak -e kokoro "Offline, no API key needed"
+    speak -e bark "Offline neural speech with audio tags"
     speak -m fast "Faster Gemini TTS model"
     speak -v Kore -c                Speak clipboard with the Kore persona
     speak -r "Already tagged [whispers] text"
@@ -879,6 +883,7 @@ $(echo -e "${BOLD}ENVIRONMENT${RESET}")
     GEMINI_API_KEY                Required for gemini synthesis and Gemini optimizer.
     OPENROUTER_API_KEY            Required when using OpenRouter optimizer.
                                   A bare kokoro run needs no key (optimizer is skipped).
+                                  A bare bark run with -r needs no key.
 
 $(echo -e "${BOLD}CONFIG${RESET}")  $(echo -e "${DIM}(~/.config/speak/config)${RESET}")
     engine=gemini                 Active engine
@@ -1128,7 +1133,7 @@ cmd_speak() {
   local engine="$ENGINE"
   if [[ -n "$engine_flag" ]]; then
     if ! engine_exists "$engine_flag"; then
-      err "Invalid engine: '${engine_flag}'. Must be one of: gemini, gcloud, kokoro"
+      err "Invalid engine: '${engine_flag}'. Must be one of: gemini, gcloud, kokoro, bark"
       exit 1
     fi
     engine="$engine_flag"
@@ -1557,12 +1562,12 @@ dispatch_adapter() {
   esac
 }
 
-# aggregate_tokens <engine> <wav...>  → "p/c"  (or "local" for kokoro)
-# Reads each <wav>.tokens (prompt,completion). For kokoro, the literal "local"
+# aggregate_tokens <engine> <wav...>  → "p/c"  (or "local" for kokoro/bark)
+# Reads each <wav>.tokens (prompt,completion). For kokoro and bark, the literal "local"
 # is surfaced verbatim. (behavior #9)
 aggregate_tokens() {
   local engine="$1"; shift
-  if [[ "$engine" == "kokoro" ]]; then
+  if [[ "$engine" == "kokoro" || "$engine" == "bark" ]]; then
     printf 'local'
     return
   fi
@@ -1596,7 +1601,7 @@ migrate_config
 # default_use_gcloud=false → gemini).
 ENGINE="${CFG_ENGINE:-gemini}"
 if ! engine_exists "$ENGINE"; then
-  err "Config engine '${ENGINE}' is invalid. Run: speak set engine gemini|gcloud|kokoro"
+  err "Config engine '${ENGINE}' is invalid. Run: speak set engine gemini|gcloud|kokoro|bark"
   exit 1
 fi
 

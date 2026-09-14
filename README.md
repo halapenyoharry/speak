@@ -20,10 +20,12 @@ chmod +x ~/.local/bin/speak
 
 - `bash` 4+
 - `curl`
-- `python3` (for JSON handling)
+- `python3` (for JSON handling and local adapters)
 - `ffmpeg` / `ffprobe` (audio conversion)
 - A Gemini API key — get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 - (Optional) An OpenRouter API key if you want to use OpenRouter models for narration optimization.
+- (Optional) For offline local Kokoro TTS: `pip3 install kokoro-onnx soundfile`
+- (Optional) For offline local Suno Bark TTS: `pip3 install transformers torch soundfile scipy`
 
 ```bash
 export GEMINI_API_KEY="your-key-here"
@@ -31,11 +33,28 @@ export GEMINI_API_KEY="your-key-here"
 export OPENROUTER_API_KEY="your-openrouter-key"
 ```
 
+## Engines
+
+`speak` supports 4 text-to-speech engines:
+
+| Engine | Deployment | Audio Tags | Description |
+|---|---|---|---|
+| `gemini` | Cloud API | Yes | Google Gemini 3.1 Flash TTS — rich expressive delivery directed by Gemini |
+| `gcloud` | Cloud API | No | Google Cloud Text-to-Speech Chirp 3 HD — studio-grade voices |
+| `kokoro` | Offline local | No | Kokoro 82M v1.0 — ultra-fast local neural TTS with persona voice blending |
+| `bark` | Offline local | Yes | Suno Bark — generative neural audio with expressive prosody and native audio tags |
+
 ## Usage
 
 ```bash
-# Speak text directly
+# Speak text directly (default: gemini)
 speak "Information has shape, and the shape persists across substrate."
+
+# Speak using offline Suno Bark with native audio tags
+speak -e bark "That is hilarious [laughs] I can't believe it."
+
+# Speak using offline Kokoro TTS
+speak -e kokoro "Offline speech synthesis without an API key."
 
 # Speak clipboard contents
 speak -c

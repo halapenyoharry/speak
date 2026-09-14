@@ -7,11 +7,12 @@
 # realization for the requested persona, the driver MUST hard-error and name the
 # engines that DO realize it — never substitute, never fall back to a "nearest" voice.
 #
-# Engine config-values (exactly three): gemini | gcloud | kokoro
+# Engine config-values: gemini | gcloud | kokoro | bark
 #   gemini : {voice: <Name>}                    — Gemini AI Studio prebuilt voice
 #   gcloud : {voice: en-US-Chirp3-HD-<Name>, language_code: en-US}
 #   kokoro : EITHER {voice: <id>} OR {blend: [{voice: <id>, weight: <w>}, ...]}  (never both)
 #            blend weights auto-normalize in the adapter (they need not sum to 1).
+#   bark   : {voice: <preset>}                  — Suno Bark speaker preset (e.g. v2/en_speaker_6)
 #
 # !!! gcloud VOICE-NAME VERIFICATION REQUIRED !!!
 # The `en-US-Chirp3-HD-<Name>` names below are constructed mechanically from the
@@ -42,6 +43,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: am_adam
+      bark:
+        voice: v2/en_speaker_1
 
   puck:
     intent: Upbeat, playful narration with energy.
@@ -57,6 +60,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: am_puck
+      bark:
+        voice: v2/en_speaker_6
 
   charon:
     intent: Informative, measured — reads like a knowledgeable narrator.
@@ -71,6 +76,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: am_michael
+      bark:
+        voice: v2/en_speaker_0
 
   kore:
     intent: Firm, authoritative — confident and grounded.
@@ -85,6 +92,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: am_michael
+      bark:
+        voice: v2/en_speaker_9
 
   fenrir:
     intent: Excitable, high-energy — leans into emphasis.
@@ -99,6 +108,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: am_adam
+      bark:
+        voice: v2/en_speaker_2
 
   leda:
     intent: Youthful, light — fresh and approachable.
@@ -113,6 +124,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: af_bella
+      bark:
+        voice: v2/en_speaker_5
 
   orus:
     intent: Firm, steady — solid and dependable.
@@ -127,6 +140,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: am_michael
+      bark:
+        voice: v2/en_speaker_4
 
   aoede:
     intent: Breezy, relaxed — easy and flowing.
@@ -141,6 +156,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: af_sarah
+      bark:
+        voice: v2/en_speaker_3
 
   callirrhoe:
     intent: Easy-going, unhurried — calm and conversational.
@@ -155,6 +172,8 @@ personas:
         language_code: en-US
       kokoro:
         voice: af_sky
+      bark:
+        voice: v2/en_speaker_9
 
   autonoe:
     intent: Bright, lively — sunny and energetic.
