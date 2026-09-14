@@ -18,7 +18,12 @@ import os
 import sys
 import shutil
 import argparse
+import warnings
 import numpy as np
+
+warnings.filterwarnings("ignore")
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def eprint(*a, **k):
@@ -108,7 +113,9 @@ def main():
     # Import dependencies
     try:
         import torch
+        import transformers
         from transformers import AutoProcessor, BarkModel
+        transformers.logging.set_verbosity_error()
         import soundfile as sf
     except ImportError as e:
         fail(f"missing python dependencies: {e}. Run: pip3 install transformers torch soundfile scipy")
