@@ -24,6 +24,8 @@ import numpy as np
 warnings.filterwarnings("ignore")
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 
 def eprint(*a, **k):
@@ -116,6 +118,11 @@ def main():
         import transformers
         from transformers import AutoProcessor, BarkModel
         transformers.logging.set_verbosity_error()
+        try:
+            from huggingface_hub.utils import logging as hf_logging
+            hf_logging.set_verbosity_error()
+        except Exception:
+            pass
         import soundfile as sf
     except ImportError as e:
         fail(f"missing python dependencies: {e}. Run: pip3 install transformers torch soundfile scipy")
