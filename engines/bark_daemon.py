@@ -93,7 +93,7 @@ class BarkDaemon:
 
         signal.signal(signal.SIGINT, handler)
         signal.signal(signal.SIGTERM, handler)
-        signal.signal(signal.SIGHUP, handler)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
     def load_model(self):
         eprint(f"  \033[90m[bark daemon] loading {self.model_id} on {self.device}...\033[0m")

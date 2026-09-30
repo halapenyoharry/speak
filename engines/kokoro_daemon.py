@@ -89,7 +89,7 @@ class KokoroDaemon:
 
         signal.signal(signal.SIGINT, handler)
         signal.signal(signal.SIGTERM, handler)
-        signal.signal(signal.SIGHUP, handler)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
     def load_model(self):
         model_dir = os.path.expanduser("~/.config/speak/models")

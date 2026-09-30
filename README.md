@@ -85,13 +85,22 @@ speak -r --json "text" | jq -r .audio_wav_base64 | base64 -d > out.wav
 
 ## Fast Local Responses (`speak daemon`)
 
-When running offline models (especially Bark, which has 1.6 GB neural audio weights), `speak` can keep the model weights resident in Apple Silicon unified memory to eliminate cold startup delays:
+When running offline models (Kokoro or Bark), `speak` can keep the model weights resident in Apple Silicon unified memory to eliminate cold startup delays:
 
 ```bash
 speak daemon start all          # Pre-load Kokoro & Bark into memory
 speak daemon status             # View memory residency and daemon status
 speak daemon stop all           # Unload models and free memory
 ```
+
+- **Visual Indicator**: `speak` shows `(daemon)` in the voice badge when synthesizing with a warm resident daemon, or `(standalone)` if the model is being loaded from disk.
+- **Resident Daemon Prompt**: After running a local model standalone, `speak` can ask if you'd like to load the daemon in the background for faster responses.
+- **Config Setting**: Toggle this prompt on/off with:
+  ```bash
+  speak set daemon_prompt false   # Disable post-run prompt
+  speak set daemon_prompt true    # Enable post-run prompt (default)
+  ```
+  Responding `never` to the interactive prompt also disables it automatically.
 
 With the daemon active, speech synthesis starts almost instantly. If the daemon is stopped, `speak` automatically falls back to standard execution without errors.
 
