@@ -140,18 +140,65 @@ engines:
     # DATA, never by inspecting the bf_/bm_ string prefix. en-gb voices are the
     # British (b*) set; en-us are the American (a*) set.
     native_voices:
-      am_puck:      { language_code: en-us }
-      am_adam:      { language_code: en-us }
-      am_michael:   { language_code: en-us }
+      # American Female
+      af_alloy:     { language_code: en-us }
+      af_aoede:     { language_code: en-us }
       af_bella:     { language_code: en-us }
+      af_heart:     { language_code: en-us }
+      af_jessica:   { language_code: en-us }
+      af_kore:      { language_code: en-us }
+      af_nicole:    { language_code: en-us }
+      af_nova:      { language_code: en-us }
+      af_river:     { language_code: en-us }
       af_sarah:     { language_code: en-us }
       af_sky:       { language_code: en-us }
-      af_heart:     { language_code: en-us }
-      af_nicole:    { language_code: en-us }
+      # American Male
+      am_adam:      { language_code: en-us }
+      am_echo:      { language_code: en-us }
+      am_eric:      { language_code: en-us }
+      am_fenrir:    { language_code: en-us }
+      am_liam:      { language_code: en-us }
+      am_michael:   { language_code: en-us }
+      am_onyx:      { language_code: en-us }
+      am_puck:      { language_code: en-us }
+      am_santa:     { language_code: en-us }
+      # British Female
+      bf_alice:     { language_code: en-gb }
       bf_emma:      { language_code: en-gb }
       bf_isabella:  { language_code: en-gb }
+      bf_lily:      { language_code: en-gb }
+      # British Male
+      bm_daniel:    { language_code: en-gb }
+      bm_fable:     { language_code: en-gb }
       bm_george:    { language_code: en-gb }
       bm_lewis:     { language_code: en-gb }
+      # International
+      ef_dora:      { language_code: es }
+      em_alex:      { language_code: es }
+      em_santa:     { language_code: es }
+      ff_siwis:     { language_code: fr-fr }
+      hf_alpha:     { language_code: hi }
+      hf_beta:      { language_code: hi }
+      hm_omega:     { language_code: hi }
+      hm_psi:       { language_code: hi }
+      if_sara:      { language_code: it }
+      im_nicola:    { language_code: it }
+      jf_alpha:     { language_code: ja }
+      jf_gongitsune: { language_code: ja }
+      jf_nezumi:    { language_code: ja }
+      jf_tebukuro:  { language_code: ja }
+      jm_kumo:      { language_code: ja }
+      pf_dora:      { language_code: pt-br }
+      pm_alex:      { language_code: pt-br }
+      pm_santa:     { language_code: pt-br }
+      zf_xiaobei:   { language_code: cmn }
+      zf_xiaoni:    { language_code: cmn }
+      zf_xiaoxiao:  { language_code: cmn }
+      zf_xiaoyi:    { language_code: cmn }
+      zm_yunjian:   { language_code: cmn }
+      zm_yunxi:     { language_code: cmn }
+      zm_yunxia:    { language_code: cmn }
+      zm_yunyang:   { language_code: cmn }
     preconditions:
       - kind: binary
         name: python3

@@ -518,6 +518,17 @@ canonical_persona() {
     printf '%s' "$want"
     return 0
   fi
+  # Allow raw Kokoro prefix lookup (e.g. af_bella -> bella, am_adam -> adam)
+  local stripped="$want"
+  for pfx in af_ am_ bf_ bm_ ef_ em_ ff_ hf_ hm_ if_ im_ jf_ jm_ pf_ pm_ zf_ zm_; do
+    if [[ "$want" == "$pfx"* ]]; then
+      stripped="${want#"$pfx"}"
+      if persona_exists "$stripped"; then
+        printf '%s' "$stripped"
+        return 0
+      fi
+    fi
+  done
   return 1
 }
 

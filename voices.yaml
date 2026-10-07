@@ -426,3 +426,220 @@ personas:
       gcloud:
         voice: en-US-Chirp3-HD-Sulafat
         language_code: en-US
+
+  # ── Kokoro Native Voices ─────────────────────────────────────────────
+  bella:
+    intent: Warm, expressive American female narration.
+    style: Expressive
+    glyph: "○"
+    color: 35
+    realizations:
+      kokoro:
+        voice: af_bella
+
+  sarah:
+    intent: Soft, calm American female narration.
+    style: Soft
+    glyph: "◎"
+    color: 32
+    realizations:
+      kokoro:
+        voice: af_sarah
+
+  heart:
+    intent: Warm, gentle American female narration.
+    style: Warm
+    glyph: "♥"
+    color: 31
+    realizations:
+      kokoro:
+        voice: af_heart
+
+  nicole:
+    intent: Crisp, clear American female narration.
+    style: Crisp
+    glyph: "◇"
+    color: 36
+    realizations:
+      kokoro:
+        voice: af_nicole
+
+  sky:
+    intent: Breezy, light American female narration.
+    style: Breezy
+    glyph: "◌"
+    color: 34
+    realizations:
+      kokoro:
+        voice: af_sky
+
+  alloy:
+    intent: Modern, energetic American female narration.
+    style: Energetic
+    glyph: "◈"
+    color: 33
+    realizations:
+      kokoro:
+        voice: af_alloy
+
+  jessica:
+    intent: Engaging, dynamic American female narration.
+    style: Engaging
+    glyph: "◉"
+    color: 35
+    realizations:
+      kokoro:
+        voice: af_jessica
+
+  nova:
+    intent: Bright, vibrant American female narration.
+    style: Vibrant
+    glyph: "☼"
+    color: 33
+    realizations:
+      kokoro:
+        voice: af_nova
+
+  river:
+    intent: Smooth, relaxed American female narration.
+    style: Relaxed
+    glyph: "≈"
+    color: 36
+    realizations:
+      kokoro:
+        voice: af_river
+
+  adam:
+    intent: Crisp, bright American male narration.
+    style: Bright
+    glyph: "◇"
+    color: 36
+    realizations:
+      kokoro:
+        voice: am_adam
+
+  michael:
+    intent: Measured, informative American male narration.
+    style: Informative
+    glyph: "▣"
+    color: 34
+    realizations:
+      kokoro:
+        voice: am_michael
+
+  echo:
+    intent: Resonant, clear American male narration.
+    style: Resonant
+    glyph: "◈"
+    color: 32
+    realizations:
+      kokoro:
+        voice: am_echo
+
+  eric:
+    intent: Conversational, friendly American male narration.
+    style: Friendly
+    glyph: "▪"
+    color: 33
+    realizations:
+      kokoro:
+        voice: am_eric
+
+  liam:
+    intent: Youthful, approachable American male narration.
+    style: Youthful
+    glyph: "△"
+    color: 36
+    realizations:
+      kokoro:
+        voice: am_liam
+
+  onyx:
+    intent: Deep, authoritative American male narration.
+    style: Authoritative
+    glyph: "■"
+    color: 35
+    realizations:
+      kokoro:
+        voice: am_onyx
+
+  santa:
+    intent: Cheerful, festive character male narration.
+    style: Cheerful
+    glyph: "★"
+    color: 31
+    realizations:
+      kokoro:
+        voice: am_santa
+
+  alice:
+    intent: Articulate, poised British female narration.
+    style: Articulate
+    glyph: "○"
+    color: 35
+    realizations:
+      kokoro:
+        voice: bf_alice
+
+  emma:
+    intent: Crisp, refined British female narration.
+    style: Refined
+    glyph: "◇"
+    color: 36
+    realizations:
+      kokoro:
+        voice: bf_emma
+
+  isabella:
+    intent: Melodic, expressive British female narration.
+    style: Melodic
+    glyph: "◎"
+    color: 35
+    realizations:
+      kokoro:
+        voice: bf_isabella
+
+  lily:
+    intent: Delicate, light British female narration.
+    style: Delicate
+    glyph: "◌"
+    color: 32
+    realizations:
+      kokoro:
+        voice: bf_lily
+
+  daniel:
+    intent: Dignified, polished British male narration.
+    style: Dignified
+    glyph: "▣"
+    color: 34
+    realizations:
+      kokoro:
+        voice: bm_daniel
+
+  fable:
+    intent: Expressive, storyteller British male narration.
+    style: Storyteller
+    glyph: "◈"
+    color: 33
+    realizations:
+      kokoro:
+        voice: bm_fable
+
+  george:
+    intent: Classic, measured British male narration.
+    style: Classic
+    glyph: "▪"
+    color: 34
+    realizations:
+      kokoro:
+        voice: bm_george
+
+  lewis:
+    intent: Grounded, warm British male narration.
+    style: Grounded
+    glyph: "■"
+    color: 36
+    realizations:
+      kokoro:
+        voice: bm_lewis
