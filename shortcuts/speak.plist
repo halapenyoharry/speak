@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>WFWorkflowName</key>
+	<string>speak</string>
+	<key>WFWorkflowMinimumClientVersion</key>
+	<integer>900</integer>
+	<key>WFWorkflowClientVersion</key>
+	<string>2605.0.5</string>
+	<key>WFWorkflowHasShortcutInputVariables</key>
+	<true/>
+	<key>WFWorkflowIcon</key>
+	<dict>
+		<key>WFWorkflowIconStartColor</key>
+		<integer>4282601983</integer>
+		<key>WFWorkflowIconGlyphNumber</key>
+		<integer>59511</integer>
+	</dict>
+	<key>WFWorkflowImportQuestions</key>
+	<array/>
+	<key>WFWorkflowTypes</key>
+	<array>
+		<string>ActionExtension</string>
+		<string>QuickActions</string>
+		<string>MenuBar</string>
+	</array>
+	<key>WFWorkflowInputContentItemClasses</key>
+	<array>
+		<string>WFStringContentItem</string>
+		<string>WFRichTextContentItem</string>
+		<string>WFURLContentItem</string>
+	</array>
+	<key>WFWorkflowActions</key>
+	<array>
+		<dict>
+			<key>WFWorkflowActionIdentifier</key>
+			<string>is.workflow.actions.runshellscript</string>
+			<key>WFWorkflowActionParameters</key>
+			<dict>
+				<key>Shell</key>
+				<string>/bin/zsh</string>
+				<key>Input</key>
+				<string>stdin</string>
+				<key>WFInput</key>
+				<dict>
+					<key>Value</key>
+					<dict>
+						<key>Type</key>
+						<string>ExtensionInput</string>
+					</dict>
+					<key>WFSerializationType</key>
+					<string>WFTextTokenAttachment</string>
+				</dict>
+				<key>Script</key>
+				<string>export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+source ~/.config/ai/keys.env 2&gt;/dev/null
+eval "$(grep '^export GEMINI_API_KEY' ~/.zshrc)"
+text="$(cat)"
+if [[ -z "${text//[[:space:]]/}" ]]; then
+  /opt/homebrew/bin/speak -q -c
+else
+  printf '%s' "$text" | /opt/homebrew/bin/speak -q
+fi</string>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>
