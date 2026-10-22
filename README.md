@@ -238,29 +238,33 @@ While audio is preparing, an animated cyber-sweep reports live elapsed decisecon
   ⚙ SYNTHESIZING [▱▱▱▱▱▰▰▱] waveform synthesis & rendering (2.1s)...
 ```
 
-### 2. Tactical Video-Game HUD & Closed Captioning
+### 2. Audio HUD & Closed Captioning
 During playback, `speak` renders a multi-line, zero-flicker HUD that never leaks into your terminal scrollback history:
 
 ```
-╭──[ 🔊 COMMS : RIVER ]────────────────────────────────────────────╮
+╭──[ 🔊 VOICE : RIVER ]────────────────────────────────────────────╮
 │                                                                  │
 │  All systems nominal captain. Visual                             │
 │  telemetry online. We have established orbit                     │
 │  around the moon of Lothal with all sensors                      │
 │  active. Primary shields are holding at                          │
-│  maximum efficiency and long range comms are                     │
+│  maximum efficiency and long range sensors are                   │
 │                                                                  │
 │  ● TALK [████████░░░░]  [━━━━━━━━━╸──────] 53%  01:23 / 02:35    │
-╰──[ ✓ TRANSMISSION COMPLETE (02:35) ]─────────────────────────────╯
+╰───────────────────────────────────────────[ ✓ DONE ]──╯
 ```
 
 * **Vocal Rhythm Beacon:** `○ IDLE` during pauses, `● TALK` (solid green) on normal speech, `● ACTIVE` (bright green) on loud vocal stress points.
 * **Signal VU Meter:** 10-segment acoustic amplitude bar reflecting real decibel volume in 50ms time slices.
 * **Progress Track:** Determinate progress bar showing playback position against total audio duration.
-* **Closed Captioning / Lyric Scrolling:** 1 to 5 lines of text with vertical breathing room. Centered on the active line.
-  * `-l, --lines N`: Set visible caption lines (1 to 5, default: `5`).
+* **Closed Captioning / Lyric Scrolling:** 1 to 8 lines of text with vertical breathing room. Centered on the active line.
+  * `-l, --lines N`: Set visible caption lines (1 to 8, default: `8`).
   * `--highlight line | word`: Choose between line-by-line illumination (default) or word-by-word karaoke style.
-* **Terminal Tab Title:** Updates the IDE terminal tab title via OSC (`🔊 COMMS: <VOICE>`) and clears on completion.
+  * `--lead MS`: Caption anticipation lead time in milliseconds before speech (default: `65`).
+  * **Weighted Phonetic Sync:** Estimates syllable lengths and punctuation pauses so lines illuminate right as the first word begins.
+  * **Focal Gradient Shading:** Multi-level depth of field (active line is bold bright cyan, fading gracefully to legible mint, soft green, and slate in both directions).
+  * **Beacon Hysteresis & Smoothing:** 350ms hold window prevents rapid flickering to `IDLE` between spoken words.
+* **Terminal Tab Title:** Updates the IDE terminal tab title via OSC (`🔊 VOICE: <VOICE>`) and clears on completion.
 
 ## Platform support
 
