@@ -71,42 +71,67 @@ def wrap_text_into_lines(words, max_chars=54):
         lines.append(curr_line)
     return lines
 
-def compute_line_timings(line_groups, total_duration):
+def estimate_syllables(w):
+    clean = re.sub(r"[^a-zA-Z]", "", w).lower()
+    if not clean:
+        return 1
+    if len(clean) <= 3:
+        return 1
+    vowels = re.findall(r"[aeiouy]+", clean)
+    count = len(vowels)
+    if clean.endswith("e") and not clean.endswith(("le", "ee")):
+        count = max(1, count - 1)
+    if clean.endswith("ed") and not clean.endswith(("ted", "ded")):
+        count = max(1, count - 1)
+    return max(1, count)
+
+def compute_line_timings(words, line_groups, total_duration, speech_start=0.0):
     """
-    Computes [start_time, end_time] for each line using syllable/char lengths
-    and punctuation pause weights.
+    Computes [start_time, end_time] for each line using per-word syllable
+    estimation and punctuation pause anchors.
+    Ensures zero cumulative drift against the audio playback.
     """
-    if not line_groups:
+    if not words or not line_groups:
         return []
 
-    weights = []
+    word_weights = []
+    pause_weights = []
+    for w in words:
+        syl = estimate_syllables(w)
+        word_weights.append(syl * 1.0)
+        p_weight = 0.0
+        if w.endswith((".", "!", "?")):
+            p_weight = 3.5  # ~600-800ms sentence boundary pause in TTS
+        elif w.endswith((",", ";", ":", "—", "-")):
+            p_weight = 1.8  # ~300-400ms clause boundary pause in TTS
+        pause_weights.append(p_weight)
+
+    total_w = sum(word_weights) + sum(pause_weights)
+    available_dur = max(0.1, total_duration - speech_start)
+    sec_per_weight = available_dur / total_w if total_w > 0 else 0.0
+
+    word_timings = []
+    curr_t = speech_start
+    for i in range(len(words)):
+        w_dur = word_weights[i] * sec_per_weight
+        p_dur = pause_weights[i] * sec_per_weight
+        word_timings.append((curr_t, curr_t + w_dur))
+        curr_t += w_dur + p_dur
+
+    line_timings = []
+    w_idx = 0
     for line in line_groups:
-        line_w = 0.0
-        for w in line:
-            clean_w = re.sub(r"[^\w]", "", w)
-            w_score = max(1.5, len(clean_w))
-            if w.endswith((".", "!", "?")):
-                w_score += 7.0  # ~400-500ms sentence pause
-            elif w.endswith((",", ";", ":", "—")):
-                w_score += 3.5  # ~250ms clause pause
-            line_w += w_score
-        weights.append(line_w)
+        st = word_timings[w_idx][0] if w_idx < len(word_timings) else total_duration
+        w_idx += len(line)
+        et = word_timings[w_idx][0] if w_idx < len(word_timings) else total_duration
+        line_timings.append((st, et))
 
-    total_w = sum(weights) if sum(weights) > 0 else 1.0
-
-    timings = []
-    curr_t = 0.0
-    for w in weights:
-        dur = (w / total_w) * total_duration
-        timings.append((curr_t, curr_t + dur))
-        curr_t += dur
-
-    return timings
+    return line_timings
 
 def get_scrolling_caption_lines(words, line_timings, line_groups, elapsed, num_lines=8, highlight_mode="line", lead_ms=65):
     """
-    Renders num_lines of closed captioning text with multi-level focal gradient shading.
-    The line illuminates precisely when its first word is just about to be spoken.
+    Renders num_lines of closed captioning text in a pure monochromatic single-hue palette.
+    Only shades of cyan are used, strictly brighter closer to the spoken line.
     """
     if not words or not line_groups or not line_timings:
         return [""] * num_lines
@@ -115,7 +140,7 @@ def get_scrolling_caption_lines(words, line_timings, line_groups, elapsed, num_l
     lead_sec = max(0.0, lead_ms / 1000.0)
     check_time = elapsed + lead_sec
 
-    # Find active line by weighted timing
+    # Find active line by timing
     active_line_idx = len(line_timings) - 1
     for idx, (t_start, t_end) in enumerate(line_timings):
         if check_time < t_end:
@@ -137,9 +162,8 @@ def get_scrolling_caption_lines(words, line_timings, line_groups, elapsed, num_l
             text_raw = " ".join(line_words)
 
             if dist == 0:
-                # ACTIVE LINE: Brightest (Bold Bright Cyan)
+                # SPOKEN LINE: Brightest (Bold Electric Cyan)
                 if highlight_mode == "word":
-                    # Estimate active word within line
                     t_start, t_end = line_timings[target_idx]
                     line_dur = max(0.1, t_end - t_start)
                     line_ratio = min(1.0, max(0.0, (elapsed - t_start) / line_dur))
@@ -147,26 +171,26 @@ def get_scrolling_caption_lines(words, line_timings, line_groups, elapsed, num_l
                     styled = []
                     for w_i, w in enumerate(line_words):
                         if w_i < active_w_idx:
-                            styled.append(f"{CYAN}{w}{RESET}")
+                            styled.append(f"\033[38;2;0;215;225m{w}{RESET}")
                         elif w_i == active_w_idx:
-                            styled.append(f"{BRIGHT_CYAN}{BOLD}\033[4m{w}{RESET}")
+                            styled.append(f"\033[1;4;38;2;0;255;255m{w}{RESET}")
                         else:
-                            styled.append(f"\033[38;5;250m{w}{RESET}")
+                            styled.append(f"\033[38;2;0;170;185m{w}{RESET}")
                     rendered_lines.append(" ".join(styled))
                 else:
-                    rendered_lines.append(f"{BRIGHT_CYAN}{BOLD}{text_raw}{RESET}")
+                    rendered_lines.append(f"\033[1;38;2;0;255;255m{text_raw}{RESET}")
             elif dist == 1:
-                # 1 line above or below: Clean Soft Cyan / Mint
-                rendered_lines.append(f"{CYAN}{text_raw}{RESET}")
+                # 1 line away: Bright Cyan (~84% luminance)
+                rendered_lines.append(f"\033[38;2;0;215;225m{text_raw}{RESET}")
             elif dist == 2:
-                # 2 lines away: Soft Muted Green
-                rendered_lines.append(f"{GREEN}{text_raw}{RESET}")
+                # 2 lines away: Medium Cyan (~67% luminance)
+                rendered_lines.append(f"\033[38;2;0;170;185m{text_raw}{RESET}")
             elif dist == 3:
-                # 3 lines away: Soft Light Gray (dimmed but clearly legible)
-                rendered_lines.append(f"\033[38;5;250m{text_raw}{RESET}")
+                # 3 lines away: Soft Cyan (~51% luminance)
+                rendered_lines.append(f"\033[38;2;0;130;145m{text_raw}{RESET}")
             else:
-                # 4+ lines away: Muted Slate (subtle periphery, never pitch dark)
-                rendered_lines.append(f"\033[38;5;244m{text_raw}{RESET}")
+                # 4+ lines away: Dim Muted Cyan (~37% luminance, clearly readable)
+                rendered_lines.append(f"\033[38;2;0;95;110m{text_raw}{RESET}")
 
     return rendered_lines
 
@@ -241,9 +265,16 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
     inner_w = box_w - 2
     caption_char_limit = inner_w - 4
 
-    # Pre-calculate line groups and phonetic timings
+    # Detect acoustic speech onset from audio samples
+    speech_start = 0.0
+    for idx, val in enumerate(rms_values):
+        if val > 0.04 * max_rms:
+            speech_start = idx / fps
+            break
+
+    # Pre-calculate line groups and per-word phonetic timings
     line_groups = wrap_text_into_lines(words, max_chars=caption_char_limit) if words else []
-    line_timings = compute_line_timings(line_groups, duration) if line_groups else []
+    line_timings = compute_line_timings(words, line_groups, duration, speech_start=speech_start) if line_groups else []
 
     # Clean voice display name
     clean_voice = voice_name

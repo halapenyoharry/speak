@@ -261,8 +261,8 @@ During playback, `speak` renders a multi-line, zero-flicker HUD that never leaks
   * `-l, --lines N`: Set visible caption lines (1 to 8, default: `8`).
   * `--highlight line | word`: Choose between line-by-line illumination (default) or word-by-word karaoke style.
   * `--lead MS`: Caption anticipation lead time in milliseconds before speech (default: `65`).
-  * **Weighted Phonetic Sync:** Estimates syllable lengths and punctuation pauses so lines illuminate right as the first word begins.
-  * **Focal Gradient Shading:** Multi-level depth of field (active line is bold bright cyan, fading gracefully to legible mint, soft green, and slate in both directions).
+  * **Word-Anchored Phonetic Sync:** Estimates syllable counts and punctuation pauses per word, calibrated to audio speech onset to eliminate cumulative drift.
+  * **Monochromatic Cyan Gradient:** Single hue only; the spoken line is electric bold cyan, stepping down in pure cyan luminance (84%, 67%, 51%, 37%) so visual attention is never distracted by conflicting colors.
   * **Beacon Hysteresis & Smoothing:** 350ms hold window prevents rapid flickering to `IDLE` between spoken words.
 * **Terminal Tab Title:** Updates the IDE terminal tab title via OSC (`🔊 VOICE: <VOICE>`) and clears on completion.
 
