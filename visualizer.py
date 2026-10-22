@@ -96,16 +96,29 @@ def wrap_text_into_lines(words, max_chars=54):
     return lines
 
 def estimate_syllables(w):
-    clean = re.sub(r"[^a-zA-Z]", "", w).lower()
+    clean = w.strip("\"'`*~_[]()")
     if not clean:
         return 1
-    if len(clean) <= 3:
+    # Split paths or URLs by slash to account for technical spoken tokens
+    if "/" in clean:
+        parts = [p for p in clean.split("/") if p]
+        return max(1, sum(estimate_syllables(p) for p in parts))
+    # Account for spoken numbers (e.g. 102 -> "one hundred two", 406 -> "four hundred six")
+    digits = re.findall(r"\d+", clean)
+    if digits:
+        total_digits = sum(len(d) for d in digits)
+        return max(1, int(total_digits * 1.3))
+    # Alpha word syllables
+    clean_alpha = re.sub(r"[^a-zA-Z]", "", clean).lower()
+    if not clean_alpha:
         return 1
-    vowels = re.findall(r"[aeiouy]+", clean)
+    if len(clean_alpha) <= 3:
+        return 1
+    vowels = re.findall(r"[aeiouy]+", clean_alpha)
     count = len(vowels)
-    if clean.endswith("e") and not clean.endswith(("le", "ee")):
+    if clean_alpha.endswith("e") and not clean_alpha.endswith(("le", "ee")):
         count = max(1, count - 1)
-    if clean.endswith("ed") and not clean.endswith(("ted", "ded")):
+    if clean_alpha.endswith("ed") and not clean_alpha.endswith(("ted", "ded")):
         count = max(1, count - 1)
     return max(1, count)
 
