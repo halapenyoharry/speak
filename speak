@@ -1046,6 +1046,8 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -c, --clipboard               Read text from clipboard
     -o, --output FILE             Save .wav file instead of playing
     -q, --quiet                   Suppress narration transcript display
+    -l, --lines N                 Closed captioning lines in HUD (1-5, default: 5)
+        --highlight MODE          Caption highlight style: line | word (default: line)
     -s, --show [MODE]             Play with visual display (wave or spec)
         --stdout                  Write WAV audio to stdout (for piping)
         --json                    Output JSON metadata + base64 audio to stdout
@@ -1292,6 +1294,8 @@ cmd_speak() {
   local output=""
   local play=true
   local quiet=false
+  local lines_flag="5"
+  local highlight_flag="line"
   local use_stdout=false
   local json_out=false
   local show_mode=""
@@ -1320,6 +1324,8 @@ cmd_speak() {
       -c|--clipboard) clipboard=true; shift ;;
       -o|--output) output="$2"; play=false; shift 2 ;;
       -q|--quiet) quiet=true; shift ;;
+      -l|--lines) lines_flag="$2"; shift 2 ;;
+      --highlight|--hl) highlight_flag="$2"; shift 2 ;;
       --stdout) use_stdout=true; play=false; quiet=true; shift ;;
       --json) json_out=true; play=false; quiet=true; shift ;;
       --optimizer-provider|--opt-provider) optimizer_provider_flag="$2"; shift 2 ;;
@@ -1592,7 +1598,13 @@ cmd_speak() {
       for pid_w in "${batch_pids[@]}"; do
         wait "$pid_w" || true
         completed=$((completed + 1))
-        echo -ne "\r  ${GRAY}generating audio...${RESET} ${DIM}${completed}/${num_chunks}${RESET}  " >&2
+        local pct=$(( completed * 100 / num_chunks ))
+        local bar_len=14
+        local filled=$(( completed * bar_len / num_chunks ))
+        local bar=""
+        for (( b=0; b<filled; b++ )); do bar="${bar}█"; done
+        for (( b=filled; b<bar_len; b++ )); do bar="${bar}░"; done
+        echo -ne "\r  ${CYAN}⚙ SYNTHESIZING${RESET} ${GREEN}[${bar}]${RESET} ${DIM}${completed}/${num_chunks} (${pct}%)${RESET}  " >&2
       done
     done
     echo "" >&2
@@ -1638,9 +1650,34 @@ cmd_speak() {
     tts_tokens="$(aggregate_tokens "$engine" "${chunk_files[@]}")"
 
   else
-    # Single-chunk mode — one adapter invocation.
-    echo -ne "  ${GRAY}generating audio...${RESET}" >&2
-    if ! dispatch_adapter "$adapter" "$transcript" "$wav_file" "$realization" "$model_id" "$language_code"; then
+    # Single-chunk mode — with live multi-stage animated synthesis.
+    local synth_pid
+    dispatch_adapter "$adapter" "$transcript" "$wav_file" "$realization" "$model_id" "$language_code" &
+    synth_pid=$!
+
+    local frames=("▰▱▱▱▱▱▱▱" "▰▰▱▱▱▱▱▱" "▱▰▰▱▱▱▱▱" "▱▱▰▰▱▱▱▱" "▱▱▱▰▰▱▱▱" "▱▱▱▱▰▰▱▱" "▱▱▱▱▱▰▰▱" "▱▱▱▱▱▱▰▰" "▱▱▱▱▱▱▱▰" "▱▱▱▱▱▱▰▰" "▱▱▱▱▱▰▰▱" "▱▱▱▱▰▰▱▱" "▱▱▱▰▰▱▱▱" "▱▱▰▰▱▱▱▱" "▱▰▰▱▱▱▱▱" "▰▰▱▱▱▱▱▱")
+    local f_idx=0
+    local step_count=0
+    while kill -0 "$synth_pid" 2>/dev/null; do
+      local bar="${frames[$f_idx]}"
+      f_idx=$(( (f_idx + 1) % ${#frames[@]} ))
+      step_count=$((step_count + 1))
+      local sec=$((step_count / 10))
+      local tenth=$((step_count % 10))
+      local phase_label="phonemization & acoustic modeling"
+      if [[ $step_count -ge 20 ]]; then
+        phase_label="waveform synthesis & rendering"
+      elif [[ $step_count -ge 10 ]]; then
+        phase_label="neural token generation"
+      fi
+      echo -ne "\r  ${CYAN}⚙ SYNTHESIZING${RESET} ${GREEN}[${bar}]${RESET} ${DIM}${phase_label} (${sec}.${tenth}s)...${RESET}  " >&2
+      sleep 0.1
+    done
+
+    local synth_status=0
+    wait "$synth_pid" || synth_status=$?
+
+    if [[ "$synth_status" -ne 0 ]]; then
       local err_msg="TTS generation failed"
       [[ -f "${wav_file}.err" ]] && err_msg=$(cat "${wav_file}.err")
       echo "" >&2
@@ -1717,26 +1754,30 @@ print(json.dumps(meta, indent=2))
       echo -e "  ${GREEN}▶${RESET} ${DIM}${mode_label}${RESET}" >&2
       ffplay -autoexit -showmode "$ff_showmode" -window_title "speak: ${badge_name}" -loglevel quiet "$wav_file" 2>/dev/null
     else
-      echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
-      if command -v afplay &>/dev/null; then
-        afplay "$wav_file"
-      elif command -v paplay &>/dev/null; then
-        paplay "$wav_file"
-      elif command -v aplay &>/dev/null; then
-        aplay "$wav_file"
-      elif command -v mpv &>/dev/null; then
-        mpv --no-video --really-quiet "$wav_file"
+      if [[ "$quiet" == false && -t 2 ]] && [[ -f "${SCRIPT_DIR}/visualizer.py" ]]; then
+        "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "$badge_name" "$transcript" --lines "${lines_flag:-5}" --highlight "${highlight_flag:-line}"
       else
-        echo "" >&2
-        err "No audio player found"
-        echo -e "  ${DIM}Saved to: ${wav_file}${RESET}" >&2
-        # Disarm cleanup so the user can recover the file.
-        trap - EXIT
-        exit 0
+        echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
+        if command -v afplay &>/dev/null; then
+          afplay "$wav_file"
+        elif command -v paplay &>/dev/null; then
+          paplay "$wav_file"
+        elif command -v aplay &>/dev/null; then
+          aplay "$wav_file"
+        elif command -v mpv &>/dev/null; then
+          mpv --no-video --really-quiet "$wav_file"
+        else
+          echo "" >&2
+          err "No audio player found"
+          echo -e "  ${DIM}Saved to: ${wav_file}${RESET}" >&2
+          # Disarm cleanup so the user can recover the file.
+          trap - EXIT
+          exit 0
+        fi
+        echo -ne "\r\033[K" >&2
+        echo -e "  ${GREEN}✓${RESET} ${DIM}done${RESET}" >&2
       fi
     fi
-    echo -ne "\r\033[K" >&2
-    echo -e "  ${GREEN}✓${RESET} ${DIM}done${RESET}" >&2
   else
     cp "$wav_file" "$output"
     echo -e "  ${GREEN}✓${RESET} ${DIM}saved → ${output}${RESET}" >&2

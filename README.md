@@ -16,6 +16,23 @@ cp speak/speak ~/.local/bin/speak
 chmod +x ~/.local/bin/speak
 ```
 
+### Homebrew Conflict (`espeak-ng`)
+
+If you have Homebrew's `espeak-ng` installed, it links its own `speak` binary into `/opt/homebrew/bin/speak`. If Homebrew comes before `~/.local/bin` in your `$PATH`, running `speak` will execute `espeak-ng` instead of this driver, throwing:
+```
+Error: The specified espeak-ng voice does not exist.
+```
+
+To ensure `speak` always resolves to this persona driver across all directories:
+1. **Shell Alias (Recommended):** Add to `~/.zshrc`:
+   ```bash
+   alias speak="$HOME/Projects/speak/speak"
+   ```
+2. **Symlink into Homebrew:**
+   ```bash
+   ln -sf "$HOME/Projects/speak/speak" /opt/homebrew/bin/speak
+   ```
+
 ### Dependencies
 
 - `bash` 4+
@@ -209,21 +226,41 @@ speak set optimizer_model openrouter/free      # use free OpenRouter model
 
 Skip step 1 with `-r` if your text is already tagged or you want the model's default interpretation.
 
-## Terminal output
+## Terminal output & Tactical HUD
 
-`speak` shows a formatted summary while it works:
+`speak` provides real-time visual feedback and an interactive sci-fi HUD in the terminal:
 
+### 1. Live Multi-Stage Synthesis Sweep
+While audio is preparing, an animated cyber-sweep reports live elapsed deciseconds across the pipeline phases:
 ```
-speak v0.1.0
-  voice  ◈ Kore
-  ──────────────────────────────────
-  [serious] Information has topological properties...
-  ──────────────────────────────────
-  duration  12s    tokens  opt:142/89 tts:89/1240
-  ✓ done
+  ⚙ SYNTHESIZING [▰▰▱▱▱▱▱▱] phonemization & acoustic modeling (0.4s)...
+  ⚙ SYNTHESIZING [▱▱▰▰▱▱▱▱] neural token generation (1.2s)...
+  ⚙ SYNTHESIZING [▱▱▱▱▱▰▰▱] waveform synthesis & rendering (2.1s)...
 ```
 
-Token counts are shown as `prompt/completion` for both the optimization and TTS calls.
+### 2. Tactical Video-Game HUD & Closed Captioning
+During playback, `speak` renders a multi-line, zero-flicker HUD that never leaks into your terminal scrollback history:
+
+```
+╭──[ 🔊 COMMS : RIVER ]────────────────────────────────────────────╮
+│                                                                  │
+│  All systems nominal captain. Visual                             │
+│  telemetry online. We have established orbit                     │
+│  around the moon of Lothal with all sensors                      │
+│  active. Primary shields are holding at                          │
+│  maximum efficiency and long range comms are                     │
+│                                                                  │
+│  ● TALK [████████░░░░]  [━━━━━━━━━╸──────] 53%  01:23 / 02:35    │
+╰──[ ✓ TRANSMISSION COMPLETE (02:35) ]─────────────────────────────╯
+```
+
+* **Vocal Rhythm Beacon:** `○ IDLE` during pauses, `● TALK` (solid green) on normal speech, `● ACTIVE` (bright green) on loud vocal stress points.
+* **Signal VU Meter:** 10-segment acoustic amplitude bar reflecting real decibel volume in 50ms time slices.
+* **Progress Track:** Determinate progress bar showing playback position against total audio duration.
+* **Closed Captioning / Lyric Scrolling:** 1 to 5 lines of text with vertical breathing room. Centered on the active line.
+  * `-l, --lines N`: Set visible caption lines (1 to 5, default: `5`).
+  * `--highlight line | word`: Choose between line-by-line illumination (default) or word-by-word karaoke style.
+* **Terminal Tab Title:** Updates the IDE terminal tab title via OSC (`🔊 COMMS: <VOICE>`) and clears on completion.
 
 ## Platform support
 
