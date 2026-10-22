@@ -3,7 +3,7 @@
 visualizer.py — In-terminal audio visualizer and teleprompter for speak.
 Calculates acoustic RMS amplitude from WAV samples and renders an in-place HUD with:
 - Breathing room (spacing above and below captions)
-- Multi-line scrolling lyrics (1-8 lines, default: 8)
+- Multi-line scrolling lyrics (1-8 lines, default: 3)
 - Weighted phonetic timing: line illuminates precisely as its first word begins
 - Multi-level focal gradient shading (active line brightest, fading gracefully in both directions)
 - Beacon hysteresis & VU smoothing (no rapid flickering between words)
@@ -53,22 +53,46 @@ def pad_to(content, target_w):
 
 def wrap_text_into_lines(words, max_chars=54):
     """
-    Greedy wrap of words into lines with a maximum visual character width.
+    Prosodic / pause-aligned chunking:
+    Breaks lines at natural breath and punctuation pauses (., !, ?, ,, ;, :, —),
+    ensuring audio pauses align with line breaks rather than falling mid-line.
+    Falls back to character width wrapping when a single phrase exceeds max_chars.
     """
+    if not words:
+        return []
+
     lines = []
     curr_line = []
     curr_len = 0
+
     for w in words:
         w_len = len(w)
+        # Check if adding this word exceeds max_chars
         if curr_line and (curr_len + 1 + w_len > max_chars):
             lines.append(curr_line)
             curr_line = [w]
             curr_len = w_len
         else:
+            if curr_line:
+                curr_len += 1 + w_len
+            else:
+                curr_len = w_len
             curr_line.append(w)
-            curr_len += (w_len + 1 if curr_line else w_len)
+
+        # Natural pause boundary: break line after punctuation if the line has substantive content
+        clean_w = w.strip("\"'`)]}*~_")
+        if clean_w.endswith((".", "!", "?")):
+            lines.append(curr_line)
+            curr_line = []
+            curr_len = 0
+        elif clean_w.endswith((",", ";", ":", "—")) and (len(curr_line) >= 3 or curr_len >= 16):
+            lines.append(curr_line)
+            curr_line = []
+            curr_len = 0
+
     if curr_line:
         lines.append(curr_line)
+
     return lines
 
 def estimate_syllables(w):
@@ -447,7 +471,7 @@ if __name__ == "__main__":
     wav = sys.argv[1]
     name = "droid"
     transcript_arg = ""
-    lines_val = 8
+    lines_val = 3
     hl_mode = "line"
     lead_val = 65
     mock = "--mock" in sys.argv
@@ -463,13 +487,13 @@ if __name__ == "__main__":
             try:
                 lines_val = max(1, min(8, int(sys.argv[idx + 1])))
             except ValueError:
-                lines_val = 8
+                lines_val = 3
             skip_next = True
         elif arg.startswith("--lines="):
             try:
                 lines_val = max(1, min(8, int(arg.split("=", 1)[1])))
             except ValueError:
-                lines_val = 8
+                lines_val = 3
         elif arg in ("-H", "--highlight") and idx + 1 < len(sys.argv):
             hl_mode = sys.argv[idx + 1].lower()
             if hl_mode not in ("line", "word"):
