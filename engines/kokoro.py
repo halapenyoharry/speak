@@ -28,13 +28,108 @@ Invocation (from the driver, per CONTRACT §1):
 import os
 import sys
 import ssl
+import re
+import types
 import argparse
 import urllib.request
+import numpy as np
 
 
 def eprint(*a, **k):
     """Diagnostics to stderr only — stdout is the driver's reserved channel."""
     print(*a, file=sys.stderr, **k)
+
+
+def patch_kokoro_phoneme_split(kokoro):
+    """Upstream kokoro-onnx has a known bug in _split_phonemes: it only splits on
+    [.,!?;]. When a sentence, code block, or unpunctuated text exceeds 510 phonemes,
+    _split_phonemes leaves the batch > 510 phonemes, which causes _create_audio to
+    truncate and crash with 'IndexError: index 510 is out of bounds for axis 0 with size 510'.
+    
+    This patches _split_phonemes to split safely at punctuation, newlines, and spaces
+    with a max batch length of 400 phonemes, and patches _create_audio to clamp token
+    indices within bounds of the voice style table."""
+    def safe_split_phonemes(self, phonemes: str, max_len: int = 400) -> list[str]:
+        parts = re.split(r'([.,!?;:\n—–\-])', phonemes)
+        batches = []
+        current = ''
+        for part in parts:
+            if not part:
+                continue
+            if len(part) > max_len:
+                subparts = part.split(' ')
+                for sp in subparts:
+                    if not sp:
+                        continue
+                    if len(sp) > max_len:
+                        for i in range(0, len(sp), max_len):
+                            chunk = sp[i:i+max_len]
+                            if len(current) + len(chunk) + 1 >= max_len:
+                                if current.strip():
+                                    batches.append(current.strip())
+                                current = chunk
+                            else:
+                                current = (current + ' ' + chunk) if current else chunk
+                    elif len(current) + len(sp) + 1 >= max_len:
+                        if current.strip():
+                            batches.append(current.strip())
+                        current = sp
+                    else:
+                        current = (current + ' ' + sp) if current else sp
+            elif len(current) + len(part) >= max_len:
+                if current.strip():
+                    batches.append(current.strip())
+                current = part
+            else:
+                if part in '.,!?;:\n—–-':
+                    current += part
+                else:
+                    if current and not current.endswith((' ', '\n')):
+                        current += ' '
+                    current += part
+        if current.strip():
+            batches.append(current.strip())
+
+        final = []
+        for b in batches:
+            b = b.strip()
+            if not b:
+                continue
+            if len(b) > 450:
+                for i in range(0, len(b), 380):
+                    sub = b[i:i+380].strip()
+                    if sub:
+                        final.append(sub)
+            else:
+                final.append(b)
+        return [b for b in final if b]
+
+    def safe_create_audio(self, phonemes, voice, speed):
+        if len(phonemes) > 480:
+            phonemes = phonemes[:480]
+        tokens = np.array(self.tokenizer.tokenize(phonemes), dtype=np.int64)
+        if len(tokens) >= len(voice):
+            tokens = tokens[:len(voice) - 1]
+        token_len = len(tokens)
+        v_slice = voice[token_len]
+        pad_tokens = [[0, *tokens, 0]]
+        if 'input_ids' in [i.name for i in self.sess.get_inputs()]:
+            inputs = {
+                'input_ids': pad_tokens,
+                'style': np.array(v_slice, dtype=np.float32),
+                'speed': np.array([speed], dtype=np.int32),
+            }
+        else:
+            inputs = {
+                'tokens': pad_tokens,
+                'style': v_slice,
+                'speed': np.ones(1, dtype=np.float32) * speed,
+            }
+        audio = self.sess.run(None, inputs)[0]
+        return audio, 24000
+
+    kokoro._split_phonemes = types.MethodType(safe_split_phonemes, kokoro)
+    kokoro._create_audio = types.MethodType(safe_create_audio, kokoro)
 
 
 def _ssl_context():
@@ -200,6 +295,7 @@ def main():
     try:
         from kokoro_onnx import Kokoro
         kokoro = Kokoro(model_path, voices_path)
+        patch_kokoro_phoneme_split(kokoro)
     except ImportError:
         fail("kokoro_onnx not installed (pip3 install kokoro-onnx)")
     except Exception as e:
