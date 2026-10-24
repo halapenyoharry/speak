@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-visualizer.py — In-terminal audio visualizer and teleprompter for speak.
-Calculates acoustic RMS amplitude from WAV samples and renders an in-place HUD with:
-- Breathing room (spacing above and below captions)
+visualizer.py — Borderless, in-terminal teleprompter and audio telemetry for speak.
+Calculates acoustic RMS amplitude from WAV samples and renders a clean, borderless display with:
+- Breathing room (vertical spacing above and below captions)
 - Multi-line scrolling lyrics (1-8 lines, default: 3)
-- Weighted phonetic timing: line illuminates precisely as its first word begins
-- Multi-level focal gradient shading (active line brightest, fading gracefully in both directions)
+- Prosodic pause-aligned chunking: lines break at natural vocal breath points
+- Word-anchored phonetic timing: syllable weighting + audio speech onset calibration
+- Monochromatic single-hue cyan gradient (active line bold electric cyan, fading smoothly)
 - Beacon hysteresis & VU smoothing (no rapid flickering between words)
-- Zero scrollback buffer leak (static borders, in-place line updates)
+- Borderless, adaptive layout: auto-scales to thin/narrow windows with zero line wrap
 """
 import sys
 import os
@@ -296,11 +297,9 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
 
     start_time = time.monotonic()
 
-    # Determine safe box width based on terminal size
+    # Determine safe wrap width based on terminal size (adaptive to narrow panes)
     term_cols = shutil.get_terminal_size((80, 24)).columns
-    box_w = min(68, max(52, term_cols - 4))
-    inner_w = box_w - 2
-    caption_char_limit = inner_w - 4
+    caption_char_limit = max(24, min(72, term_cols - 4))
 
     # Detect acoustic speech onset from audio samples
     speech_start = 0.0
@@ -318,16 +317,13 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
     if clean_voice.lower().startswith("af_") or clean_voice.lower().startswith("am_"):
         clean_voice = clean_voice[3:]
 
-    # Set terminal tab title and hide cursor
-    sys.stderr.write(f"\033]0;🔊 VOICE: {clean_voice.upper()}\007")
+    # Set terminal tab title (clean, no emoji) and hide cursor
+    sys.stderr.write(f"\033]0;VOICE: {clean_voice.upper()}\007")
     sys.stderr.write("\033[?25l")
 
-    # TOP BORDER — PRINTED EXACTLY ONCE
-    badge = f" 🔊 VOICE : {clean_voice.upper()} "
-    top_left = f"{CYAN}╭──[{WHITE_ON_CYAN}{badge}{RESET}{CYAN}]"
-    top_dashes = max(2, box_w - visual_width(top_left) - 1)
-    top_line = top_left + ("─" * top_dashes) + f"╮{RESET}\n"
-    sys.stderr.write(top_line)
+    # HEADER LINE — PRINTED ONCE (clean text, no box, no emoji)
+    header_line = f"\n  {CYAN}VOICE:{RESET} {BOLD}{clean_voice.upper()}{RESET}\n"
+    sys.stderr.write(header_line)
     sys.stderr.flush()
 
     # Total in-place refresh lines:
@@ -380,23 +376,22 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
             frame_lines = []
 
             # 1. Padding space ABOVE closed captioning
-            pad_top = f"{CYAN}│{RESET}{' ' * inner_w}{CYAN}│{RESET}"
-            frame_lines.append(pad_top)
+            frame_lines.append("")
 
-            # 2. Scrolling closed captioning lines (with focal gradient shading)
+            # 2. Scrolling closed captioning lines (with monochromatic cyan shading)
             caption_lines = get_scrolling_caption_lines(
                 words, line_timings, line_groups, elapsed, num_lines=num_lines, highlight_mode=highlight_mode, lead_ms=lead_ms
             )
             for c_line in caption_lines:
-                content = f"{CYAN}│{RESET}  {c_line}"
-                frame_lines.append(pad_to(content, box_w - 1) + f"{CYAN}│{RESET}")
+                frame_lines.append(f"  {c_line}")
 
             # 3. Padding space BELOW closed captioning
-            pad_bot = f"{CYAN}│{RESET}{' ' * inner_w}{CYAN}│{RESET}"
-            frame_lines.append(pad_bot)
+            frame_lines.append("")
 
-            # 4. Telemetry Line (Beacon + Smoothed VU Meter + Progress Track + Time)
-            meter_len = 10
+            # 4. Telemetry Line (Adaptive width for narrow terminal panes)
+            meter_len = 10 if term_cols >= 65 else (8 if term_cols >= 50 else 6)
+            track_len = 14 if term_cols >= 70 else (10 if term_cols >= 55 else 8)
+
             filled = int(smoothed_rms * meter_len)
             if smoothed_rms > 0.8:
                 meter_col = BRIGHT_YELLOW
@@ -406,7 +401,6 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
                 meter_col = GREEN
             meter_bar = meter_col + ("█" * filled) + DIM + ("░" * (meter_len - filled)) + RESET
 
-            track_len = 14
             p_filled = int(ratio * track_len)
             track = (
                 BRIGHT_CYAN
@@ -420,10 +414,13 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
             cur_m, cur_s = divmod(int(elapsed), 60)
             tot_m, tot_s = divmod(int(duration), 60)
             pct = int(ratio * 100)
-            time_str = f"{cur_m:02d}:{cur_s:02d}/{tot_m:02d}:{tot_s:02d}"
+            if term_cols >= 50:
+                time_str = f"{cur_m:02d}:{cur_s:02d}/{tot_m:02d}:{tot_s:02d}"
+            else:
+                time_str = f"{cur_m:02d}:{cur_s:02d}"
 
-            telem_content = f"{CYAN}│{RESET}  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
-            frame_lines.append(pad_to(telem_content, box_w - 1) + f"{CYAN}│{RESET}")
+            telem_content = f"  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
+            frame_lines.append(telem_content)
 
             # Write all lines in place (NO trailing newline after last line!)
             output_str = "\n".join([f"\r\033[K{line}" for line in frame_lines])
@@ -445,27 +442,19 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
         time_str = f"{tot_m:02d}:{tot_s:02d}"
 
         fin_lines = []
-        fin_lines.append(f"{GREEN}│{RESET}{' ' * inner_w}{GREEN}│{RESET}")
+        fin_lines.append("")
 
-        # Show final lines in finished green state
         fin_caption_lines = get_scrolling_caption_lines(
             words, line_timings, line_groups, duration, num_lines=num_lines, highlight_mode=highlight_mode
         )
         for c_line in fin_caption_lines:
-            content = f"{GREEN}│{RESET}  {c_line}"
-            fin_lines.append(pad_to(content, box_w - 1) + f"{GREEN}│{RESET}")
+            fin_lines.append(f"  {c_line}")
 
-        fin_lines.append(f"{GREEN}│{RESET}{' ' * inner_w}{GREEN}│{RESET}")
-
-        fin_telem = f"{GREEN}│{RESET}  {GREEN}● DONE{RESET}    PLAYBACK FINISHED ({time_str})"
-        fin_lines.append(pad_to(fin_telem, box_w - 1) + f"{GREEN}│{RESET}")
-
-        bot_tag = f"[{GREEN}✓ DONE{RESET}{GREEN}]──╯{RESET}\n"
-        bot_dashes = max(2, box_w - visual_width(bot_tag) - 1)
-        comp_bot = f"{GREEN}╰" + ("─" * bot_dashes) + bot_tag
+        fin_lines.append("")
+        fin_lines.append(f"  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})")
 
         output_fin = "\n".join([f"\r\033[K{line}" for line in fin_lines])
-        sys.stderr.write(f"{output_fin}\n\r\033[K{comp_bot}")
+        sys.stderr.write(f"{output_fin}\n")
         sys.stderr.flush()
 
     finally:
