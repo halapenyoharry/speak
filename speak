@@ -319,6 +319,7 @@ load_config() {
   CFG_OPTIMIZER_PROVIDER=""
   CFG_OPTIMIZER_MODEL=""
   CFG_DAEMON_PROMPT=""
+  CFG_EMPHASIS=""
   # Per-engine model overrides stored as model_overrides.<engine>=<model>.
   # Kept as plain scalars (bash 3.2-compatible; no associative arrays) since
   # there are exactly four known engines.
@@ -337,6 +338,7 @@ load_config() {
         optimizer_provider) CFG_OPTIMIZER_PROVIDER="$value" ;;
         optimizer_model) CFG_OPTIMIZER_MODEL="$value" ;;
         daemon_prompt|prompt_daemon) CFG_DAEMON_PROMPT="$value" ;;
+        emphasis) CFG_EMPHASIS="$value" ;;
         model_overrides.gemini) CFG_MODEL_OVERRIDE_gemini="$value" ;;
         model_overrides.gcloud) CFG_MODEL_OVERRIDE_gcloud="$value" ;;
         model_overrides.kokoro) CFG_MODEL_OVERRIDE_kokoro="$value" ;;
@@ -772,6 +774,7 @@ cmd_set() {
     echo -e "  optimizer_model    ${DIM}${OPTIMIZER_MODEL}${RESET}" >&2
     local dp="${CFG_DAEMON_PROMPT:-true}"
     echo -e "  daemon_prompt      ${DIM}${dp}${RESET}" >&2
+    echo -e "  emphasis           ${DIM}${CFG_EMPHASIS:-bold}${RESET}" >&2
     local oe
     for oe in gemini gcloud kokoro bark; do
       local ov; ov="$(model_override_for "$oe")"
@@ -850,9 +853,21 @@ cmd_set() {
           ;;
       esac
       ;;
+    emphasis)
+      case "$(tolower "${value:-}")" in
+        bold|underline|both|inverse)
+          save_config_value "emphasis" "$(tolower "$value")"
+          echo -e "${GREEN}✓${RESET} caption emphasis set to ${BOLD}$(tolower "$value")${RESET}" >&2
+          ;;
+        *)
+          err "Invalid emphasis: '${value:-}'. Must be one of: bold, underline, both, inverse"
+          exit 1
+          ;;
+      esac
+      ;;
     *)
       err "Unknown config key: $key"
-      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_provider, optimizer_model, daemon_prompt${RESET}" >&2
+      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_provider, optimizer_model, daemon_prompt, emphasis${RESET}" >&2
       exit 1
       ;;
   esac
@@ -1758,7 +1773,7 @@ print(json.dumps(meta, indent=2))
       ffplay -autoexit -showmode "$ff_showmode" -window_title "speak: ${badge_name}" -loglevel quiet "$wav_file" 2>/dev/null
     else
       if [[ "$quiet" == false && -t 2 ]] && [[ -f "${SCRIPT_DIR}/visualizer.py" ]]; then
-        "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "$badge_name" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-word}"
+        "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "$badge_name" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-word}" --emphasis "${CFG_EMPHASIS:-bold}"
       else
         echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
         if command -v afplay &>/dev/null; then

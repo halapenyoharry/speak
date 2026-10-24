@@ -166,18 +166,27 @@ def compute_line_timings(words, line_groups, total_duration, speech_start=0.0):
 
     return line_timings
 
-def get_scrolling_caption_lines(words, line_groups, elapsed, duration, num_lines=3, highlight_mode="word"):
+EMPHASIS_STYLES = {
+    "bold": "\033[1;38;2;0;255;255m",
+    "underline": "\033[4;38;2;0;255;255m",
+    "both": "\033[1;4;38;2;0;255;255m",
+    "inverse": "\033[7;1;38;2;0;255;255m",
+}
+
+def get_scrolling_caption_lines(words, line_groups, elapsed, duration, num_lines=3, highlight_mode="word", emphasis="bold"):
     """
     Renders num_lines of closed captioning text centered on the active spoken word.
     In word mode (default / original):
     - Uses continuous audio ratio (elapsed / duration) mapped smoothly to word index
     - Active line is the line containing the current word
-    - Current word glows bold electric cyan underlined (brightest focal point)
+    - Current word glows with emphasis style (default: bold electric cyan, no underline)
     - Past words & past lines: soft legible cyan
     - Future words & future lines: dim cyan
     """
     if not words or not line_groups:
         return [""] * num_lines
+
+    active_style = EMPHASIS_STYLES.get(emphasis.lower(), EMPHASIS_STYLES["bold"])
 
     ratio = min(1.0, elapsed / duration) if duration > 0 else 0
     total_words = len(words)
@@ -228,14 +237,14 @@ def get_scrolling_caption_lines(words, line_groups, elapsed, duration, num_lines
                         if w_i < active_word_in_line:
                             styled.append(f"\033[38;2;0;190;205m{w}{RESET}")
                         elif w_i == active_word_in_line:
-                            styled.append(f"\033[1;4;38;2;0;255;255m{w}{RESET}")
+                            styled.append(f"{active_style}{w}{RESET}")
                         else:
                             styled.append(f"\033[38;2;0;105;120m{w}{RESET}")
                     rendered_lines.append(" ".join(styled))
 
     return rendered_lines
 
-def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, highlight_mode="word", mock_audio=False):
+def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, highlight_mode="word", emphasis="bold", mock_audio=False):
     if not os.path.exists(wav_path):
         print(f"File not found: {wav_path}", file=sys.stderr)
         return 1
@@ -383,7 +392,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
 
             # 2. Scrolling closed captioning lines (word-for-word karaoke tracking)
             caption_lines = get_scrolling_caption_lines(
-                words, line_groups, elapsed, duration, num_lines=num_lines, highlight_mode=highlight_mode
+                words, line_groups, elapsed, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
             )
             for c_line in caption_lines:
                 frame_lines.append(f"  {c_line}")
@@ -448,7 +457,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
         fin_lines.append("")
 
         fin_caption_lines = get_scrolling_caption_lines(
-            words, line_groups, duration, duration, num_lines=num_lines, highlight_mode=highlight_mode
+            words, line_groups, duration, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
         )
         for c_line in fin_caption_lines:
             fin_lines.append(f"  {c_line}")
@@ -478,6 +487,7 @@ if __name__ == "__main__":
     transcript_arg = ""
     lines_val = 3
     hl_mode = "word"
+    emphasis_val = os.environ.get("SPEAK_EMPHASIS", "bold").lower()
     lead_val = 65
     mock = "--mock" in sys.argv
 
@@ -508,6 +518,15 @@ if __name__ == "__main__":
             hl_mode = arg.split("=", 1)[1].lower()
             if hl_mode not in ("line", "word"):
                 hl_mode = "line"
+        elif arg in ("-e", "--emphasis") and idx + 1 < len(sys.argv):
+            emphasis_val = sys.argv[idx + 1].lower()
+            if emphasis_val not in EMPHASIS_STYLES:
+                emphasis_val = "bold"
+            skip_next = True
+        elif arg.startswith("--emphasis="):
+            emphasis_val = arg.split("=", 1)[1].lower()
+            if emphasis_val not in EMPHASIS_STYLES:
+                emphasis_val = "bold"
         elif arg == "--lead" and idx + 1 < len(sys.argv):
             try:
                 lead_val = max(0, int(sys.argv[idx + 1]))
@@ -526,4 +545,4 @@ if __name__ == "__main__":
         elif not transcript_arg:
             transcript_arg = arg
 
-    sys.exit(play_with_hud(wav, name, transcript=transcript_arg, num_lines=lines_val, highlight_mode=hl_mode, mock_audio=mock))
+    sys.exit(play_with_hud(wav, name, transcript=transcript_arg, num_lines=lines_val, highlight_mode=hl_mode, emphasis=emphasis_val, mock_audio=mock))
