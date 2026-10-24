@@ -166,24 +166,37 @@ def compute_line_timings(words, line_groups, total_duration, speech_start=0.0):
 
     return line_timings
 
-def get_scrolling_caption_lines(words, line_timings, line_groups, elapsed, num_lines=8, highlight_mode="line", lead_ms=65):
+def get_scrolling_caption_lines(words, line_groups, elapsed, duration, num_lines=3, highlight_mode="word"):
     """
-    Renders num_lines of closed captioning text in a pure monochromatic single-hue palette.
-    Only shades of cyan are used, strictly brighter closer to the spoken line.
+    Renders num_lines of closed captioning text centered on the active spoken word.
+    In word mode (default / original):
+    - Uses continuous audio ratio (elapsed / duration) mapped smoothly to word index
+    - Active line is the line containing the current word
+    - Current word glows bold electric cyan underlined (brightest focal point)
+    - Past words & past lines: soft legible cyan
+    - Future words & future lines: dim cyan
     """
-    if not words or not line_groups or not line_timings:
+    if not words or not line_groups:
         return [""] * num_lines
 
-    # Apply anticipation lead so color changes right before first word begins
-    lead_sec = max(0.0, lead_ms / 1000.0)
-    check_time = elapsed + lead_sec
+    ratio = min(1.0, elapsed / duration) if duration > 0 else 0
+    total_words = len(words)
+    curr_word_idx = min(total_words - 1, max(0, int(ratio * total_words)))
 
-    # Find active line by timing
-    active_line_idx = len(line_timings) - 1
-    for idx, (t_start, t_end) in enumerate(line_timings):
-        if check_time < t_end:
-            active_line_idx = idx
+    # Locate which line contains curr_word_idx
+    word_counter = 0
+    active_line_idx = 0
+    active_word_in_line = 0
+    for l_idx, line in enumerate(line_groups):
+        line_word_count = len(line)
+        if word_counter + line_word_count > curr_word_idx:
+            active_line_idx = l_idx
+            active_word_in_line = curr_word_idx - word_counter
             break
+        word_counter += line_word_count
+        if l_idx == len(line_groups) - 1:
+            active_line_idx = l_idx
+            active_word_in_line = line_word_count - 1
 
     # Center active_line_idx in the num_lines window
     half = num_lines // 2
@@ -196,43 +209,33 @@ def get_scrolling_caption_lines(words, line_timings, line_groups, elapsed, num_l
             rendered_lines.append("")
         else:
             line_words = line_groups[target_idx]
-            dist = abs(target_idx - active_line_idx)
             text_raw = " ".join(line_words)
 
-            if dist == 0:
-                # SPOKEN LINE: Brightest (Bold Electric Cyan)
-                if highlight_mode == "word":
-                    t_start, t_end = line_timings[target_idx]
-                    line_dur = max(0.1, t_end - t_start)
-                    line_ratio = min(1.0, max(0.0, (elapsed - t_start) / line_dur))
-                    active_w_idx = min(len(line_words) - 1, int(line_ratio * len(line_words)))
+            if target_idx < active_line_idx:
+                # Past line: soft legible cyan
+                rendered_lines.append(f"\033[38;2;0;190;205m{text_raw}{RESET}")
+            elif target_idx > active_line_idx:
+                # Future line: dim cyan
+                rendered_lines.append(f"\033[38;2;0;105;120m{text_raw}{RESET}")
+            else:
+                # Active line
+                if highlight_mode == "line":
+                    rendered_lines.append(f"\033[1;38;2;0;255;255m{text_raw}{RESET}")
+                else:
+                    # Word-by-word highlight (original karaoke style)
                     styled = []
                     for w_i, w in enumerate(line_words):
-                        if w_i < active_w_idx:
-                            styled.append(f"\033[38;2;0;215;225m{w}{RESET}")
-                        elif w_i == active_w_idx:
+                        if w_i < active_word_in_line:
+                            styled.append(f"\033[38;2;0;190;205m{w}{RESET}")
+                        elif w_i == active_word_in_line:
                             styled.append(f"\033[1;4;38;2;0;255;255m{w}{RESET}")
                         else:
-                            styled.append(f"\033[38;2;0;170;185m{w}{RESET}")
+                            styled.append(f"\033[38;2;0;105;120m{w}{RESET}")
                     rendered_lines.append(" ".join(styled))
-                else:
-                    rendered_lines.append(f"\033[1;38;2;0;255;255m{text_raw}{RESET}")
-            elif dist == 1:
-                # 1 line away: Bright Cyan (~84% luminance)
-                rendered_lines.append(f"\033[38;2;0;215;225m{text_raw}{RESET}")
-            elif dist == 2:
-                # 2 lines away: Medium Cyan (~67% luminance)
-                rendered_lines.append(f"\033[38;2;0;170;185m{text_raw}{RESET}")
-            elif dist == 3:
-                # 3 lines away: Soft Cyan (~51% luminance)
-                rendered_lines.append(f"\033[38;2;0;130;145m{text_raw}{RESET}")
-            else:
-                # 4+ lines away: Dim Muted Cyan (~37% luminance, clearly readable)
-                rendered_lines.append(f"\033[38;2;0;95;110m{text_raw}{RESET}")
 
     return rendered_lines
 
-def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, highlight_mode="line", lead_ms=65, mock_audio=False):
+def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, highlight_mode="word", mock_audio=False):
     if not os.path.exists(wav_path):
         print(f"File not found: {wav_path}", file=sys.stderr)
         return 1
@@ -378,9 +381,9 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
             # 1. Padding space ABOVE closed captioning
             frame_lines.append("")
 
-            # 2. Scrolling closed captioning lines (with monochromatic cyan shading)
+            # 2. Scrolling closed captioning lines (word-for-word karaoke tracking)
             caption_lines = get_scrolling_caption_lines(
-                words, line_timings, line_groups, elapsed, num_lines=num_lines, highlight_mode=highlight_mode, lead_ms=lead_ms
+                words, line_groups, elapsed, duration, num_lines=num_lines, highlight_mode=highlight_mode
             )
             for c_line in caption_lines:
                 frame_lines.append(f"  {c_line}")
@@ -445,7 +448,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=8, high
         fin_lines.append("")
 
         fin_caption_lines = get_scrolling_caption_lines(
-            words, line_timings, line_groups, duration, num_lines=num_lines, highlight_mode=highlight_mode
+            words, line_groups, duration, duration, num_lines=num_lines, highlight_mode=highlight_mode
         )
         for c_line in fin_caption_lines:
             fin_lines.append(f"  {c_line}")
@@ -474,7 +477,7 @@ if __name__ == "__main__":
     name = "droid"
     transcript_arg = ""
     lines_val = 3
-    hl_mode = "line"
+    hl_mode = "word"
     lead_val = 65
     mock = "--mock" in sys.argv
 
@@ -523,4 +526,4 @@ if __name__ == "__main__":
         elif not transcript_arg:
             transcript_arg = arg
 
-    sys.exit(play_with_hud(wav, name, transcript=transcript_arg, num_lines=lines_val, highlight_mode=hl_mode, lead_ms=lead_val, mock_audio=mock))
+    sys.exit(play_with_hud(wav, name, transcript=transcript_arg, num_lines=lines_val, highlight_mode=hl_mode, mock_audio=mock))

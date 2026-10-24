@@ -1047,7 +1047,7 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -o, --output FILE             Save .wav file instead of playing
     -q, --quiet                   Suppress narration transcript display
     -l, --lines N                 Closed captioning lines in HUD (1-8, default: 3)
-        --highlight MODE          Caption highlight style: line | word (default: line)
+        --highlight MODE          Caption highlight style: word | line (default: word)
         --lead MS                 Caption anticipation lead in ms before speech (default: 65)
     -s, --show [MODE]             Play with visual display (wave or spec)
         --stdout                  Write WAV audio to stdout (for piping)
@@ -1296,7 +1296,7 @@ cmd_speak() {
   local play=true
   local quiet=false
   local lines_flag="3"
-  local highlight_flag="line"
+  local highlight_flag="word"
   local lead_flag="65"
   local use_stdout=false
   local json_out=false
@@ -1758,7 +1758,7 @@ print(json.dumps(meta, indent=2))
       ffplay -autoexit -showmode "$ff_showmode" -window_title "speak: ${badge_name}" -loglevel quiet "$wav_file" 2>/dev/null
     else
       if [[ "$quiet" == false && -t 2 ]] && [[ -f "${SCRIPT_DIR}/visualizer.py" ]]; then
-        "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "$badge_name" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-line}" --lead "${lead_flag:-65}"
+        "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "$badge_name" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-word}"
       else
         echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
         if command -v afplay &>/dev/null; then

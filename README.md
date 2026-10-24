@@ -257,7 +257,7 @@ During playback, `speak` renders a borderless, adaptive teleprompter that auto-s
 * **Progress Track:** Determinate progress bar showing playback position against total audio duration.
 * **Closed Captioning / Lyric Scrolling:** 1 to 8 lines of text with vertical breathing room (default: `3`). Centered on the active line.
   * `-l, --lines N`: Set visible caption lines (1 to 8, default: `3`).
-  * `--highlight line | word`: Choose between line-by-line illumination (default) or word-by-word karaoke style.
+  * `--highlight word | line`: Choose between word-by-word karaoke style (default) or line-by-line illumination.
   * `--lead MS`: Caption anticipation lead time in milliseconds before speech (default: `65`).
   * **Prosodic Pause-Aligned Sync:** Lines break at natural punctuation and breath pauses (`, . ! ? ; —`) so audio pauses coincide with line breaks rather than falling mid-line.
   * **Word-Anchored Phonetic Timing:** Estimates syllable counts and punctuation pauses per word, calibrated to audio speech onset to eliminate cumulative drift.
