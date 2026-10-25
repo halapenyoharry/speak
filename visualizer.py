@@ -173,6 +173,26 @@ EMPHASIS_STYLES = {
     "inverse": "\033[7;1;38;2;0;255;255m",
 }
 
+def get_voice_color(voice_name):
+    """Resolve ANSI color code for persona from voices.yaml."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    vy = os.path.join(script_dir, "voices.yaml")
+    if os.path.exists(vy):
+        try:
+            import yaml
+            with open(vy, "r") as f:
+                data = yaml.safe_load(f)
+            personas = data.get("personas", {})
+            v = voice_name.lower()
+            if v in personas and "color" in personas[v]:
+                return f"\033[{personas[v]['color']}m"
+            for p, pdata in personas.items():
+                if p == v:
+                    return f"\033[{pdata.get('color', 36)}m"
+        except Exception:
+            pass
+    return "\033[36m"
+
 def get_scrolling_caption_lines(words, line_groups, elapsed, duration, num_lines=3, highlight_mode="word", emphasis="bold"):
     """
     Renders num_lines of closed captioning text centered on the active spoken word.
@@ -324,10 +344,12 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
     line_groups = wrap_text_into_lines(words, max_chars=caption_char_limit) if words else []
     line_timings = compute_line_timings(words, line_groups, duration, speech_start=speech_start) if line_groups else []
 
-    # Clean voice display name
+    # Clean voice display name and color badge
     clean_voice = voice_name
     if clean_voice.lower().startswith("af_") or clean_voice.lower().startswith("am_"):
         clean_voice = clean_voice[3:]
+    v_color = get_voice_color(clean_voice)
+    voice_badge = f"{v_color}{clean_voice.upper()}{RESET}"
 
     # Set terminal tab title (clean, no emoji) and hide cursor
     sys.stderr.write(f"\033]0;VOICE: {clean_voice.upper()}\007")
@@ -371,19 +393,13 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
             # VU meter smoothing (smooth peak decay)
             smoothed_rms = max(norm_rms, smoothed_rms * 0.72)
 
-            # Beacon state with 350ms hold hysteresis
-            if norm_rms > 0.45:
-                beacon = f"{BRIGHT_GREEN}● ACTIVE{RESET}"
-                last_talk_time = elapsed
-            elif norm_rms > 0.15:
-                beacon = f"{GREEN}● TALK  {RESET}"
-                last_talk_time = elapsed
+            # Beacon state: solid steady PLAY during playback (no rapid word toggling)
+            if norm_rms > 0.05 or elapsed - last_talk_time < HOLD_TIME:
+                beacon = f"{GREEN}● PLAY{RESET}"
+                if norm_rms > 0.05:
+                    last_talk_time = elapsed
             else:
-                # Inter-word silence: hold TALK state if within hold window
-                if elapsed - last_talk_time < HOLD_TIME:
-                    beacon = f"{GREEN}● TALK  {RESET}"
-                else:
-                    beacon = f"{DIM}○ IDLE  {RESET}"
+                beacon = f"{DIM}○ IDLE{RESET}"
 
             frame_lines = []
 
@@ -431,7 +447,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
             else:
                 time_str = f"{cur_m:02d}:{cur_s:02d}"
 
-            telem_content = f"  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
+            telem_content = f"  {voice_badge}  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
             frame_lines.append(telem_content)
 
             # Write all lines in place (NO trailing newline after last line!)
@@ -463,7 +479,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
             fin_lines.append(f"  {c_line}")
 
         fin_lines.append("")
-        fin_lines.append(f"  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})")
+        fin_lines.append(f"  {voice_badge}  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})")
 
         output_fin = "\n".join([f"\r\033[K{line}" for line in fin_lines])
         sys.stderr.write(f"{output_fin}\n")

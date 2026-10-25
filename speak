@@ -1668,29 +1668,20 @@ cmd_speak() {
     tts_tokens="$(aggregate_tokens "$engine" "${chunk_files[@]}")"
 
   else
-    # Single-chunk mode — with live multi-stage animated synthesis.
+    # Single-chunk mode — calm, compact, non-wrapping synthesis indicator.
     local synth_pid
     dispatch_adapter "$adapter" "$transcript" "$wav_file" "$realization" "$model_id" "$language_code" &
     synth_pid=$!
 
-    local frames=("▰▱▱▱▱▱▱▱" "▰▰▱▱▱▱▱▱" "▱▰▰▱▱▱▱▱" "▱▱▰▰▱▱▱▱" "▱▱▱▰▰▱▱▱" "▱▱▱▱▰▰▱▱" "▱▱▱▱▱▰▰▱" "▱▱▱▱▱▱▰▰" "▱▱▱▱▱▱▱▰" "▱▱▱▱▱▱▰▰" "▱▱▱▱▱▰▰▱" "▱▱▱▱▰▰▱▱" "▱▱▱▰▰▱▱▱" "▱▱▰▰▱▱▱▱" "▱▰▰▱▱▱▱▱" "▰▰▱▱▱▱▱▱")
-    local f_idx=0
-    local step_count=0
+    local spin_frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+    local s_idx=0
     while kill -0 "$synth_pid" 2>/dev/null; do
-      local bar="${frames[$f_idx]}"
-      f_idx=$(( (f_idx + 1) % ${#frames[@]} ))
-      step_count=$((step_count + 1))
-      local sec=$((step_count / 10))
-      local tenth=$((step_count % 10))
-      local phase_label="phonemization & acoustic modeling"
-      if [[ $step_count -ge 20 ]]; then
-        phase_label="waveform synthesis & rendering"
-      elif [[ $step_count -ge 10 ]]; then
-        phase_label="neural token generation"
-      fi
-      echo -ne "\r  ${CYAN}⚙ SYNTHESIZING${RESET} ${GREEN}[${bar}]${RESET} ${DIM}${phase_label} (${sec}.${tenth}s)...${RESET}  " >&2
+      local s_char="${spin_frames[$s_idx]}"
+      s_idx=$(( (s_idx + 1) % ${#spin_frames[@]} ))
+      echo -ne "\r\033[K  ${CYAN}${s_char}${RESET} ${GRAY}generating audio...${RESET}" >&2
       sleep 0.1
     done
+    echo -ne "\r\033[K" >&2
 
     local synth_status=0
     wait "$synth_pid" || synth_status=$?
