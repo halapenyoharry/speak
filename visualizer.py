@@ -349,15 +349,11 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
     if clean_voice.lower().startswith("af_") or clean_voice.lower().startswith("am_"):
         clean_voice = clean_voice[3:]
     v_color = get_voice_color(clean_voice)
-    voice_badge = f"{v_color}{clean_voice.upper()}{RESET}"
+    voice_badge = f"{BOLD}{v_color}{clean_voice.upper()}{RESET}"
 
     # Set terminal tab title (clean, no emoji) and hide cursor
     sys.stderr.write(f"\033]0;VOICE: {clean_voice.upper()}\007")
     sys.stderr.write("\033[?25l")
-
-    # HEADER LINE — PRINTED ONCE (clean text, no box, no emoji)
-    header_line = f"\n  {CYAN}VOICE:{RESET} {BOLD}{clean_voice.upper()}{RESET}\n"
-    sys.stderr.write(header_line)
     sys.stderr.flush()
 
     # Total in-place refresh lines:
