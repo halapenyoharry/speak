@@ -1,16 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="lothal">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    try {
+      const savedTheme = localStorage.getItem("speak-theme");
+      if (savedTheme === "arcade" || savedTheme === "lothal") {
+        document.documentElement.dataset.theme = savedTheme;
+      }
+    } catch (_) {}
+  </script>
   <title>speak — Web UI Sidecar</title>
   <style>
     :root {
-      color-scheme: dark;
+      color-scheme: light dark;
+      &:has(> head > meta[name="color-scheme"][content="dark"]),
+      &[data-theme="lothal"],
+      &[data-theme="arcade"] {
+        color-scheme: dark;
+      }
+
+      /* Theme 1 (Default): Lothal Astromech — Monochromatic Electric Cyan Telemetry */
       --brand-color: #00f5d4;
       --bg-base: #090d16;
       --bg-panel: #101726;
       --bg-elevated: #162033;
+      --bg-hud: #060911;
       --border-subtle: #1f2d47;
       --border-focus: #00ffff;
       --text-bright: #00ffff;
@@ -21,8 +38,44 @@
       --status-green: #51cf66;
       --status-red: #ff6b6b;
       --status-yellow: #fcc419;
+      --btn-primary-bg: #005f6b;
+      --btn-primary-hover: #007d8c;
+      --btn-primary-border: #00ffff;
+      --panel-shadow: none;
+      --text-glow: none;
+      --active-word-glow: none;
+      --hud-grid-bg: none;
       --font-prose: "Atkinson Hyperlegible", "Lexend", "OpenDyslexic Nerd Font", system-ui, -apple-system, sans-serif;
       --font-mono: "OpenDyslexicMono Nerd Font", "OpenDyslexic Nerd Font", ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    /* Theme 2: 1984 Vector Arcade — 80s CRT Vector Cabinet Vibes */
+    :root[data-theme="arcade"],
+    :root:has(#theme-arcade:checked) {
+      --brand-color: #ff2a85;
+      --bg-base: #070210;
+      --bg-panel: #120624;
+      --bg-elevated: #1f0b3d;
+      --bg-hud: #05010c;
+      --border-subtle: #ff2a85;
+      --border-focus: #ffe600;
+      --text-bright: #ffe600;
+      --text-soft: #00f0ff;
+      --text-dim: #9d4edd;
+      --text-main: #fff0f8;
+      --text-muted: #d084ff;
+      --status-green: #00ff66;
+      --status-red: #ff0055;
+      --status-yellow: #ffe600;
+      --btn-primary-bg: #b80058;
+      --btn-primary-hover: #ff007f;
+      --btn-primary-border: #ffe600;
+      --panel-shadow: 0 0 14px rgba(255, 42, 133, 0.35), inset 0 0 12px rgba(0, 240, 255, 0.08);
+      --text-glow: 0 0 8px rgba(0, 240, 255, 0.65);
+      --active-word-glow: 0 0 12px rgba(255, 230, 0, 0.9), 0 0 24px rgba(255, 42, 133, 0.7);
+      --hud-grid-bg:
+        linear-gradient(rgba(255, 42, 133, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.12) 1px, transparent 1px);
     }
 
     * {
@@ -38,11 +91,31 @@
       font-size: 1rem;
       line-height: 1.5;
       accent-color: var(--brand-color);
+      position: relative;
+      min-height: 100vh;
+    }
+
+    /* Subtle CRT scanline overlay active in 1984 Vector Arcade theme */
+    :root[data-theme="arcade"] body::after,
+    :root:has(#theme-arcade:checked) body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.22) 0px,
+        rgba(0, 0, 0, 0.22) 1px,
+        transparent 1px,
+        transparent 3px
+      );
     }
 
     header {
-      border-block-end: 1px solid var(--border-subtle);
+      border-block-end: 2px solid var(--border-subtle);
       background-color: var(--bg-panel);
+      box-shadow: var(--panel-shadow);
       padding: 1rem 1.5rem;
       display: flex;
       flex-wrap: wrap;
@@ -54,11 +127,13 @@
     .brand-title {
       display: flex;
       align-items: baseline;
+      flex-wrap: wrap;
       gap: 0.75rem;
       margin: 0;
       font-family: var(--font-mono);
       font-size: 1.25rem;
       color: var(--text-bright);
+      text-shadow: var(--active-word-glow);
     }
 
     .brand-subtitle {
@@ -66,6 +141,52 @@
       color: var(--text-muted);
       font-family: var(--font-prose);
       font-weight: normal;
+      text-shadow: none;
+    }
+
+    .header-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .theme-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.25rem 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+    }
+
+    .theme-switcher-label {
+      color: var(--text-muted);
+      padding-inline: 0.35rem;
+      font-weight: 600;
+    }
+
+    .theme-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.65rem;
+      min-height: 36px;
+      border-radius: 5px;
+      cursor: pointer;
+      color: var(--text-main);
+      border: 1px solid transparent;
+      user-select: none;
+    }
+
+    .theme-option:has(input:checked) {
+      border-color: var(--brand-color);
+      background-color: var(--bg-elevated);
+      color: var(--text-bright);
+      font-weight: 700;
     }
 
     .quick-actions {
@@ -93,6 +214,7 @@
     .panel {
       background-color: var(--bg-panel);
       border: 1px solid var(--border-subtle);
+      box-shadow: var(--panel-shadow);
       border-radius: 8px;
       padding: 1.25rem;
       margin-block-end: 1.5rem;
@@ -103,6 +225,7 @@
       font-size: 1rem;
       font-family: var(--font-mono);
       color: var(--text-soft);
+      text-shadow: var(--text-glow);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       display: flex;
@@ -122,6 +245,7 @@
       font-family: var(--font-mono);
       font-size: 0.85rem;
       color: var(--text-soft);
+      text-shadow: var(--text-glow);
       padding-inline: 0.5rem;
     }
 
@@ -133,7 +257,8 @@
       margin-block-end: 0;
     }
 
-    label.field-label {
+    label.field-label,
+    span.field-label {
       display: block;
       font-weight: 600;
       margin-block-end: 0.35rem;
@@ -203,7 +328,8 @@
 
     .choice-pill:has(input:checked) {
       border-color: var(--brand-color);
-      background-color: rgba(0, 245, 212, 0.1);
+      background-color: var(--bg-elevated);
+      box-shadow: var(--panel-shadow);
     }
 
     /* Fallback for older browsers without accent-color */
@@ -231,12 +357,12 @@
       background-color: var(--bg-elevated);
       color: var(--text-main);
       cursor: pointer;
-      transition: background-color 0.15s ease, border-color 0.15s ease;
+      transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
 
     button:hover:not(:disabled) {
       border-color: var(--text-soft);
-      background-color: #1e2c46;
+      box-shadow: var(--panel-shadow);
     }
 
     button:disabled {
@@ -245,15 +371,18 @@
     }
 
     button.btn-primary {
-      background-color: #005f6b;
-      border-color: var(--text-bright);
+      background-color: var(--btn-primary-bg);
+      border: 2px solid var(--btn-primary-border);
       color: #ffffff;
       font-weight: 700;
       width: 100%;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      box-shadow: var(--panel-shadow);
     }
 
     button.btn-primary:hover:not(:disabled) {
-      background-color: #007d8c;
+      background-color: var(--btn-primary-hover);
     }
 
     button.btn-chip {
@@ -263,10 +392,13 @@
       color: var(--text-soft);
     }
 
-    /* 3-Line Borderless Cyan Teleprompter HUD */
+    /* 3-Line Teleprompter HUD */
     .teleprompter-hud {
-      background-color: #060911;
-      border: 1px solid var(--border-subtle);
+      background-color: var(--bg-hud);
+      background-image: var(--hud-grid-bg);
+      background-size: 28px 28px;
+      border: 2px solid var(--border-subtle);
+      box-shadow: var(--panel-shadow);
       border-radius: 8px;
       padding: 1.5rem 1.25rem;
       font-family: var(--font-mono);
@@ -292,22 +424,26 @@
 
     .word-past {
       color: var(--text-soft);
+      text-shadow: var(--text-glow);
     }
 
     .word-active-bold {
       color: var(--text-bright);
       font-weight: 700;
+      text-shadow: var(--active-word-glow);
     }
 
     .word-active-underline {
       color: var(--text-bright);
       text-decoration: underline;
+      text-shadow: var(--active-word-glow);
     }
 
     .word-active-both {
       color: var(--text-bright);
       font-weight: 700;
       text-decoration: underline;
+      text-shadow: var(--active-word-glow);
     }
 
     .word-active-inverse {
@@ -329,12 +465,13 @@
       gap: 0.85rem;
       font-size: 0.92rem;
       padding-block-start: 0.75rem;
-      border-block-start: 1px solid #131d30;
+      border-block-start: 1px solid var(--border-subtle);
     }
 
     .voice-badge {
       font-weight: 700;
       letter-spacing: 0.04em;
+      text-shadow: var(--text-glow);
     }
 
     .status-beacon {
@@ -343,6 +480,7 @@
 
     .beacon-play {
       color: var(--status-green);
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
     }
 
     .beacon-idle {
@@ -352,8 +490,9 @@
     .hud-progress-track {
       flex: 1;
       min-width: 120px;
-      height: 8px;
-      background-color: #162238;
+      height: 10px;
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
       border-radius: 4px;
       overflow: hidden;
       cursor: pointer;
@@ -363,6 +502,7 @@
       height: 100%;
       width: 0%;
       background-color: var(--text-bright);
+      box-shadow: var(--active-word-glow);
       transition: width 0.08s linear;
     }
 
@@ -380,7 +520,7 @@
 
     /* Live Terminal SSE Output */
     .terminal-log {
-      background-color: #05080f;
+      background-color: var(--bg-hud);
       border: 1px solid var(--border-subtle);
       border-radius: 6px;
       padding: 0.9rem 1rem;
@@ -390,7 +530,7 @@
       max-height: 320px;
       overflow-y: auto;
       white-space: pre-wrap;
-      color: #b8d8e0;
+      color: var(--text-main);
     }
 
     .log-line {
@@ -465,13 +605,28 @@
   <header>
     <h1 class="brand-title">
       <span>speak</span>
-      <span class="brand-subtitle">Non-Invasive Web Sidecar &amp; 3-Line Teleprompter</span>
+      <span class="brand-subtitle" id="theme-tagline">Lothal Astromech — 3-Line Telemetry Sidecar</span>
     </h1>
-    <div class="quick-actions" id="quick-subcommands" role="toolbar" aria-label="CLI Subcommands">
-      <button type="button" data-subcmd="voices --all">speak voices --all</button>
-      <button type="button" data-subcmd="daemon status">speak daemon status</button>
-      <button type="button" data-subcmd="set">speak set (config)</button>
-      <button type="button" data-subcmd="--help">speak --help</button>
+
+    <div class="header-controls">
+      <div class="theme-switcher" role="radiogroup" aria-label="Color Theme">
+        <span class="theme-switcher-label">THEME:</span>
+        <label class="theme-option" for="theme-lothal">
+          <input type="radio" id="theme-lothal" name="ui_theme" value="lothal" checked>
+          <span>◇ Lothal Astromech</span>
+        </label>
+        <label class="theme-option" for="theme-arcade">
+          <input type="radio" id="theme-arcade" name="ui_theme" value="arcade">
+          <span>🕹️ 1984 Vector Arcade</span>
+        </label>
+      </div>
+
+      <div class="quick-actions" id="quick-subcommands" role="toolbar" aria-label="CLI Subcommands">
+        <button type="button" data-subcmd="voices --all">speak voices --all</button>
+        <button type="button" data-subcmd="daemon status">speak daemon status</button>
+        <button type="button" data-subcmd="set">speak set (config)</button>
+        <button type="button" data-subcmd="--help">speak --help</button>
+      </div>
     </div>
   </header>
 
@@ -554,7 +709,7 @@
             <div class="form-group">
               <label class="field-label" for="emphasis-select">Active Word Emphasis</label>
               <select id="emphasis-select" name="emphasis">
-                <option value="bold" selected>Bold Electric Cyan (Default — No Underline)</option>
+                <option value="bold" selected>Bold Electric Glow (Default — No Underline)</option>
                 <option value="underline">Underline Only</option>
                 <option value="both">Bold + Underline</option>
                 <option value="inverse">Inverse Block</option>
@@ -618,6 +773,17 @@
   </main>
 
   <script>
+    const THEME_META = {
+      lothal: {
+        tagline: "Lothal Astromech — 3-Line Telemetry Sidecar",
+        submitLabel: "Synthesize Speech",
+      },
+      arcade: {
+        tagline: "1984 Vector Arcade — INSERT COIN · HIGH SCORE EDITION",
+        submitLabel: "🕹️ INSERT COIN & SYNTHESIZE (1UP)",
+      },
+    };
+
     const state = {
       schema: null,
       selectedEngine: "kokoro",
@@ -627,6 +793,7 @@
       lineGroups: [],
       emphasis: "bold",
       isRunning: false,
+      theme: document.documentElement.dataset.theme || "lothal",
     };
 
     const engineRadiosEl = document.getElementById("engine-radios");
@@ -641,6 +808,7 @@
     const audioPlayerEl = document.getElementById("audio-player");
     const playPauseBtnEl = document.getElementById("play-pause-btn");
     const emphasisSelectEl = document.getElementById("emphasis-select");
+    const themeTaglineEl = document.getElementById("theme-tagline");
 
     const capLines = [
       document.getElementById("cap-line-0"),
@@ -653,6 +821,44 @@
     const hudProgressTrackEl = document.getElementById("hud-progress-track");
     const hudPctEl = document.getElementById("hud-pct");
     const hudTimeEl = document.getElementById("hud-time");
+
+    function applyTheme(themeId, persist = true) {
+      const resolved = themeId === "arcade" ? "arcade" : "lothal";
+      state.theme = resolved;
+      document.documentElement.dataset.theme = resolved;
+
+      const radioEl = document.getElementById(`theme-${resolved}`);
+      if (radioEl) radioEl.checked = true;
+
+      const meta = THEME_META[resolved] || THEME_META.lothal;
+      themeTaglineEl.textContent = meta.tagline;
+      submitBtnEl.textContent = meta.submitLabel;
+
+      if (persist) {
+        try {
+          localStorage.setItem("speak-theme", resolved);
+        } catch (_) {}
+      }
+    }
+
+    // Bind theme radio buttons
+    document.querySelectorAll('input[name="ui_theme"]').forEach((radio) => {
+      radio.addEventListener("change", (e) => {
+        if (e.target.checked) {
+          applyTheme(e.target.value, true);
+        }
+      });
+    });
+
+    // Cross-tab synchronization via storage event
+    window.addEventListener("storage", (e) => {
+      if (e.key === "speak-theme" && e.newValue) {
+        applyTheme(e.newValue, false);
+      }
+    });
+
+    // Initialize theme state on load
+    applyTheme(state.theme, false);
 
     function formatMMSS(sec) {
       if (!Number.isFinite(sec) || sec < 0) return "00:00";
@@ -718,7 +924,7 @@
 
       const ratio = duration > 0 ? Math.min(1.0, Math.max(0, elapsed / duration)) : 0;
       const totalWords = state.words.length;
-      const currWordIdx = Math.min(totalWords - 1, Math.max(0, Math.floor(ratio * totalWords)));
+      const currWordIdx = minMax(Math.floor(ratio * totalWords), 0, totalWords - 1);
 
       let wordCounter = 0;
       let activeLineIdx = 0;
@@ -754,7 +960,6 @@
           lineEl.className = "caption-line word-future";
           lineEl.textContent = lineWords.join(" ");
         } else {
-          // Active center line: word-by-word highlight
           lineWords.forEach((w, wIdx) => {
             const span = document.createElement("span");
             if (wIdx < activeWordInLine) {
@@ -777,6 +982,10 @@
       hudProgressFillEl.style.width = `${pct}%`;
       hudPctEl.textContent = `${pct}%`;
       hudTimeEl.textContent = `${formatMMSS(elapsed)}/${formatMMSS(duration)}`;
+    }
+
+    function minMax(val, min, max) {
+      return Math.min(max, Math.max(min, val));
     }
 
     audioPlayerEl.addEventListener("play", () => {
@@ -829,7 +1038,6 @@
       renderTeleprompterFrame(audioPlayerEl.currentTime || 0, audioPlayerEl.duration || 1);
     });
 
-    // Spacebar Play/Pause when not typing in an input/textarea
     document.addEventListener("keydown", (e) => {
       if (e.isComposing) return;
       const tag = (e.target?.tagName || "").toLowerCase();
@@ -842,7 +1050,6 @@
       }
     });
 
-    // Cmd+Enter / Ctrl+Enter to submit from textarea (checking isComposing)
     textInputEl.addEventListener("keydown", (e) => {
       if (e.isComposing) return;
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
