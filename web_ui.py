@@ -263,10 +263,17 @@ async def list_outputs() -> JSONResponse:
 
             wav_meta = probe_wav_file(wav_file)
             sidecar_json = wav_file.with_suffix(".json")
+            timing_json = Path(str(wav_file) + ".timing.json")
             meta_extra: Dict[str, Any] = {}
             if sidecar_json.exists():
                 try:
                     meta_extra = json.loads(sidecar_json.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            timing_data = meta_extra.get("timing")
+            if not timing_data and timing_json.exists():
+                try:
+                    timing_data = json.loads(timing_json.read_text(encoding="utf-8"))
                 except Exception:
                     pass
 
@@ -287,6 +294,7 @@ async def list_outputs() -> JSONResponse:
                     "engine": meta_extra.get("engine", ""),
                     "transcript": meta_extra.get("transcript", ""),
                     "command": meta_extra.get("command", ""),
+                    "timing": timing_data,
                 }
             )
 
@@ -473,14 +481,23 @@ async def run_cli(request: Request) -> StreamingResponse:
 
         if exit_code == 0 and output_wav_path and output_wav_path.exists():
             wav_meta = probe_wav_file(output_wav_path)
+            timing_json_path = Path(str(output_wav_path) + ".timing.json")
+            timing_data = None
+            if timing_json_path.exists():
+                try:
+                    timing_data = json.loads(timing_json_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
             sidecar_data = {
                 "filename": output_wav_path.name,
                 "voice": voice or read_user_config().get("persona", "puck"),
                 "engine": engine or read_user_config().get("engine", "kokoro"),
-                "transcript": transcript_text,
+                "transcript": timing_data.get("cleaned_text", transcript_text) if timing_data else transcript_text,
                 "command": cmd_display,
                 "duration_seconds": wav_meta["duration_seconds"],
                 "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "timing": timing_data,
             }
             try:
                 output_wav_path.with_suffix(".json").write_text(
@@ -495,7 +512,8 @@ async def run_cli(request: Request) -> StreamingResponse:
                 "duration_seconds": wav_meta["duration_seconds"],
                 "voice": sidecar_data["voice"],
                 "engine": sidecar_data["engine"],
-                "transcript": transcript_text,
+                "transcript": sidecar_data["transcript"],
+                "timing": timing_data,
             }
 
         yield format_sse(

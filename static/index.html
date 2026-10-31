@@ -1,81 +1,85 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="lothal">
+<html lang="en" data-theme="lothal" data-parallax="on">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
   <script>
     try {
       const savedTheme = localStorage.getItem("speak-theme");
       if (savedTheme === "arcade" || savedTheme === "lothal") {
         document.documentElement.dataset.theme = savedTheme;
       }
+      const savedParallax = localStorage.getItem("speak-parallax");
+      if (savedParallax === "off" || savedParallax === "on") {
+        document.documentElement.dataset.parallax = savedParallax;
+      }
     } catch (_) {}
   </script>
-  <title>speak — Web UI Sidecar</title>
+  <title>speak</title>
   <style>
     :root {
-      color-scheme: light dark;
-      &:has(> head > meta[name="color-scheme"][content="dark"]),
-      &[data-theme="lothal"],
-      &[data-theme="arcade"] {
-        color-scheme: dark;
-      }
+      color-scheme: dark;
+      --scroll-y: 0px;
+      --mouse-x: 0px;
+      --mouse-y: 0px;
 
-      /* Theme 1 (Default): Lothal Astromech — Monochromatic Electric Cyan Telemetry */
-      --brand-color: #00f5d4;
-      --bg-base: #090d16;
-      --bg-panel: #101726;
-      --bg-elevated: #162033;
-      --bg-hud: #060911;
-      --border-subtle: #1f2d47;
-      --border-focus: #00ffff;
-      --text-bright: #00ffff;
-      --text-soft: #00becd;
-      --text-dim: #4a7c89;
-      --text-main: #e2f1f5;
-      --text-muted: #8aa6b0;
-      --status-green: #51cf66;
-      --status-red: #ff6b6b;
-      --status-yellow: #fcc419;
-      --btn-primary-bg: #005f6b;
-      --btn-primary-hover: #007d8c;
-      --btn-primary-border: #00ffff;
-      --panel-shadow: none;
-      --text-glow: none;
-      --active-word-glow: none;
-      --hud-grid-bg: none;
+      /* Theme 1: Lothal — Deep Slate & Distinct Component Palette */
+      --bg-base: #080b12;
+      --bg-panel: rgba(15, 21, 35, 0.86);
+      --bg-elevated: #162035;
+      --bg-hud: #05080f;
+      --text-main: #ecf3f8;
+      --text-muted: #8aa0b8;
+      --text-dim: #49657a;
+      --border-base: rgba(255, 255, 255, 0.1);
+
+      /* 6 Distinct Component Colors (Lothal) */
+      --c1-voice: #00f5d4;     /* 1. Voice & Engine: Cyan */
+      --c2-text: #ffbe0b;      /* 2. Text & Speak: Amber Gold */
+      --c3-options: #b197fc;   /* 3. Options: Violet */
+      --c4-player: #38d9a9;    /* 4. Player & Captions: Emerald */
+      --c5-terminal: #4dabf7;  /* 5. Terminal Output: Sky Blue */
+      --c6-files: #ff6b6b;     /* 6. Saved Files: Coral */
+
+      --status-ok: #51cf66;
+      --status-err: #ff6b6b;
+      --status-warn: #fcc419;
+
+      --card-radius: 10px;
+      --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      --glow-strength: 0px;
+
       --font-prose: "Atkinson Hyperlegible", "Lexend", "OpenDyslexic Nerd Font", system-ui, -apple-system, sans-serif;
       --font-mono: "OpenDyslexicMono Nerd Font", "OpenDyslexic Nerd Font", ui-monospace, "SF Mono", Menlo, monospace;
     }
 
-    /* Theme 2: 1984 Vector Arcade — 80s CRT Vector Cabinet Vibes */
-    :root[data-theme="arcade"],
-    :root:has(#theme-arcade:checked) {
-      --brand-color: #ff2a85;
-      --bg-base: #070210;
-      --bg-panel: #120624;
-      --bg-elevated: #1f0b3d;
-      --bg-hud: #05010c;
-      --border-subtle: #ff2a85;
-      --border-focus: #ffe600;
-      --text-bright: #ffe600;
-      --text-soft: #00f0ff;
-      --text-dim: #9d4edd;
-      --text-main: #fff0f8;
-      --text-muted: #d084ff;
-      --status-green: #00ff66;
-      --status-red: #ff0055;
-      --status-yellow: #ffe600;
-      --btn-primary-bg: #b80058;
-      --btn-primary-hover: #ff007f;
-      --btn-primary-border: #ffe600;
-      --panel-shadow: 0 0 14px rgba(255, 42, 133, 0.35), inset 0 0 12px rgba(0, 240, 255, 0.08);
-      --text-glow: 0 0 8px rgba(0, 240, 255, 0.65);
-      --active-word-glow: 0 0 12px rgba(255, 230, 0, 0.9), 0 0 24px rgba(255, 42, 133, 0.7);
-      --hud-grid-bg:
-        linear-gradient(rgba(255, 42, 133, 0.12) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 240, 255, 0.12) 1px, transparent 1px);
+    /* Theme 2: 1984 Arcade — High-Contrast CRT Vector Cabinet (Visual Only) */
+    :root[data-theme="arcade"] {
+      --bg-base: #06010d;
+      --bg-panel: rgba(18, 5, 36, 0.88);
+      --bg-elevated: #220a45;
+      --bg-hud: #04000a;
+      --text-main: #fff5fc;
+      --text-muted: #c896ff;
+      --text-dim: #6f3b9e;
+      --border-base: rgba(255, 42, 133, 0.28);
+
+      /* 6 Distinct Component Colors (1984 Arcade) */
+      --c1-voice: #00f0ff;     /* 1. Voice & Engine: Vector Cyan */
+      --c2-text: #ffe600;      /* 2. Text & Speak: Laser Yellow */
+      --c3-options: #d946ef;   /* 3. Options: Neon Purple */
+      --c4-player: #00ff66;    /* 4. Player & Captions: Phosphor Green */
+      --c5-terminal: #3a86ff;  /* 5. Terminal Output: Arcade Blue */
+      --c6-files: #ff2a85;     /* 6. Saved Files: Neon Magenta */
+
+      --status-ok: #00ff66;
+      --status-err: #ff0055;
+      --status-warn: #ffe600;
+
+      --card-radius: 6px;
+      --card-shadow: 0 0 18px rgba(0, 0, 0, 0.7);
+      --glow-strength: 8px;
     }
 
     * {
@@ -89,15 +93,15 @@
       color: var(--text-main);
       font-family: var(--font-prose);
       font-size: 1rem;
-      line-height: 1.5;
-      accent-color: var(--brand-color);
+      line-height: 1.4;
+      min-height: 100dvh;
+      overflow-x: hidden;
       position: relative;
-      min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    /* Subtle CRT scanline overlay active in 1984 Vector Arcade theme */
-    :root[data-theme="arcade"] body::after,
-    :root:has(#theme-arcade:checked) body::after {
+    /* Subtle CRT scanline overlay in Arcade theme */
+    :root[data-theme="arcade"] body::after {
       content: "";
       position: fixed;
       inset: 0;
@@ -105,685 +109,890 @@
       z-index: 9999;
       background: repeating-linear-gradient(
         0deg,
-        rgba(0, 0, 0, 0.22) 0px,
-        rgba(0, 0, 0, 0.22) 1px,
+        rgba(0, 0, 0, 0.2) 0px,
+        rgba(0, 0, 0, 0.2) 1px,
         transparent 1px,
         transparent 3px
       );
     }
 
+    /* ── Layered Parallax Backdrop (Background + Midground) ─────────── */
+    .parallax-stage {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    :root[data-parallax="off"] .parallax-stage {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .parallax-layer {
+        transform: none !important;
+      }
+    }
+
+    .parallax-layer {
+      position: absolute;
+      inset: -15%;
+      will-change: transform;
+      transition: transform 0.08s linear;
+    }
+
+    /* Layer 1: Slow Background Grid (0.14x scroll speed) */
+    .parallax-bg {
+      transform: translate3d(
+        calc(var(--mouse-x) * -0.015),
+        calc(var(--scroll-y) * -0.14 + var(--mouse-y) * -0.015),
+        0
+      );
+      background-image:
+        radial-gradient(circle at 18% 20%, color-mix(in srgb, var(--c1-voice) 12%, transparent) 0%, transparent 40%),
+        radial-gradient(circle at 82% 35%, color-mix(in srgb, var(--c2-text) 10%, transparent) 0%, transparent 38%),
+        radial-gradient(circle at 25% 78%, color-mix(in srgb, var(--c4-player) 11%, transparent) 0%, transparent 42%),
+        radial-gradient(circle at 80% 82%, color-mix(in srgb, var(--c6-files) 10%, transparent) 0%, transparent 40%),
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    }
+
+    /* Layer 2: Midground Geometric Shapes (Okalpha / Bake 003 style, 0.32x scroll speed) */
+    .parallax-mid {
+      transform: translate3d(
+        calc(var(--mouse-x) * 0.03),
+        calc(var(--scroll-y) * -0.32 + var(--mouse-y) * 0.03),
+        0
+      );
+    }
+
+    .geo-shape {
+      position: absolute;
+      opacity: 0.14;
+      border: 2px solid currentColor;
+    }
+
+    .geo-1 {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      color: var(--c1-voice);
+      top: 14%;
+      left: 6%;
+    }
+
+    .geo-2 {
+      width: 140px;
+      height: 140px;
+      transform: rotate(22deg);
+      border-radius: 12px;
+      color: var(--c2-text);
+      top: 42%;
+      right: 7%;
+    }
+
+    .geo-3 {
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      color: var(--c4-player);
+      bottom: 12%;
+      left: 48%;
+    }
+
+    /* ── Compact Sticky Header Bar ──────────────────────────────────── */
     header {
-      border-block-end: 2px solid var(--border-subtle);
-      background-color: var(--bg-panel);
-      box-shadow: var(--panel-shadow);
-      padding: 1rem 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      background-color: color-mix(in srgb, var(--bg-base) 82%, transparent);
+      border-bottom: 1px solid var(--border-base);
+      padding: 0.55rem 0.9rem;
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 1rem;
-    }
-
-    .brand-title {
-      display: flex;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-      margin: 0;
-      font-family: var(--font-mono);
-      font-size: 1.25rem;
-      color: var(--text-bright);
-      text-shadow: var(--active-word-glow);
-    }
-
-    .brand-subtitle {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      font-family: var(--font-prose);
-      font-weight: normal;
-      text-shadow: none;
-    }
-
-    .header-controls {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .theme-switcher {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: var(--bg-base);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      padding: 0.25rem 0.5rem;
-      font-family: var(--font-mono);
-      font-size: 0.82rem;
-    }
-
-    .theme-switcher-label {
-      color: var(--text-muted);
-      padding-inline: 0.35rem;
-      font-weight: 600;
-    }
-
-    .theme-option {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.35rem 0.65rem;
-      min-height: 36px;
-      border-radius: 5px;
-      cursor: pointer;
-      color: var(--text-main);
-      border: 1px solid transparent;
-      user-select: none;
-    }
-
-    .theme-option:has(input:checked) {
-      border-color: var(--brand-color);
-      background-color: var(--bg-elevated);
-      color: var(--text-bright);
-      font-weight: 700;
-    }
-
-    .quick-actions {
-      display: flex;
-      flex-wrap: wrap;
       gap: 0.5rem;
     }
 
+    .app-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--c1-voice);
+      margin: 0;
+      letter-spacing: 0.02em;
+    }
+
+    .app-version {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      border: 1px solid var(--border-base);
+      padding: 0.1rem 0.4rem;
+      border-radius: 99px;
+    }
+
+    .top-bar-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    /* Compact Select & Button Primitives (16px font prevents iOS zoom) */
+    select,
+    input[type="text"],
+    textarea,
+    button {
+      font-family: var(--font-prose);
+      font-size: 1rem;
+      color: var(--text-main);
+      background-color: var(--bg-hud);
+      border: 1px solid var(--border-base);
+      border-radius: 7px;
+      min-height: 42px;
+      padding: 0.4rem 0.65rem;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+    }
+
+    select {
+      cursor: pointer;
+      padding-right: 1.6rem;
+    }
+
+    .select-mini {
+      min-height: 36px;
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+      padding: 0.25rem 0.5rem;
+      background-color: var(--bg-elevated);
+    }
+
+    .btn-mini {
+      min-height: 36px;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.82rem;
+      font-family: var(--font-mono);
+      background-color: var(--bg-elevated);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-mini[aria-pressed="true"] {
+      border-color: var(--c1-voice);
+      color: var(--c1-voice);
+    }
+
+    /* ── Main Layout Grid (Desktop 2-col, iPhone 1-col Tight Stack) ─── */
     main {
-      max-width: 1360px;
+      position: relative;
+      z-index: 1;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 1.5rem;
+      padding: 0.85rem;
       display: grid;
-      grid-template-columns: 1fr 1.15fr;
-      gap: 1.5rem;
+      grid-template-columns: 1fr 1.08fr;
+      gap: 0.85rem;
       align-items: start;
     }
 
-    @media (max-width: 960px) {
+    .col-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      min-width: 0;
+    }
+
+    @media (max-width: 820px) {
       main {
+        grid-template-columns: 1fr;
+        padding: 0.65rem;
+        gap: 0.65rem;
+      }
+      .col-stack {
+        gap: 0.65rem;
+      }
+      header {
+        padding: 0.45rem 0.65rem;
+      }
+      .app-version {
+        display: none;
+      }
+    }
+
+    /* ── Color-Coded Component Cards ────────────────────────────────── */
+    .comp-card {
+      --comp-color: var(--c1-voice);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--comp-color) 7%, transparent) 0%, transparent 60%),
+        var(--bg-panel);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid color-mix(in srgb, var(--comp-color) 38%, transparent);
+      border-left: 4px solid var(--comp-color);
+      border-radius: var(--card-radius);
+      box-shadow: var(--card-shadow);
+      padding: 0.8rem 0.9rem;
+    }
+
+    .comp-1 { --comp-color: var(--c1-voice); }
+    .comp-2 { --comp-color: var(--c2-text); }
+    .comp-3 { --comp-color: var(--c3-options); }
+    .comp-4 { --comp-color: var(--c4-player); }
+    .comp-5 { --comp-color: var(--c5-terminal); }
+    .comp-6 { --comp-color: var(--c6-files); }
+
+    .comp-card :is(select, textarea, input, button):focus-visible {
+      outline: 2px solid var(--comp-color);
+      outline-offset: 1px;
+      border-color: var(--comp-color);
+    }
+
+    .comp-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .comp-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: var(--comp-color);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0;
+    }
+
+    .comp-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
+      background-color: var(--comp-color);
+      color: #05080f;
+      font-size: 0.75rem;
+      font-weight: 800;
+    }
+
+    .comp-meta {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Component 1: Voice & Engine (Single-Row Dual Pulldown) ─────── */
+    .voice-engine-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.45fr;
+      gap: 0.5rem;
+    }
+
+    @media (max-width: 400px) {
+      .voice-engine-grid {
         grid-template-columns: 1fr;
       }
     }
 
-    .panel {
-      background-color: var(--bg-panel);
-      border: 1px solid var(--border-subtle);
-      box-shadow: var(--panel-shadow);
-      border-radius: 8px;
-      padding: 1.25rem;
-      margin-block-end: 1.5rem;
+    .field-compact {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 0;
     }
 
-    .panel-title {
-      margin-block: 0 1rem;
-      font-size: 1rem;
+    .field-micro-label {
       font-family: var(--font-mono);
-      color: var(--text-soft);
-      text-shadow: var(--text-glow);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      font-size: 0.72rem;
+      color: var(--text-muted);
       display: flex;
-      align-items: center;
       justify-content: space-between;
     }
 
-    fieldset {
-      border: 1px solid var(--border-subtle);
-      border-radius: 6px;
-      padding: 1rem;
-      margin-block-end: 1.25rem;
-      background-color: rgba(22, 32, 51, 0.35);
-    }
-
-    legend {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      color: var(--text-soft);
-      text-shadow: var(--text-glow);
-      padding-inline: 0.5rem;
-    }
-
-    .form-group {
-      margin-block-end: 1.25rem;
-    }
-
-    .form-group:last-child {
-      margin-block-end: 0;
-    }
-
-    label.field-label,
-    span.field-label {
-      display: block;
-      font-weight: 600;
-      margin-block-end: 0.35rem;
-      color: var(--text-main);
-    }
-
-    .hint {
-      display: block;
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      margin-block-start: 0.25rem;
-    }
-
-    input[type="text"],
-    input[type="number"],
-    select,
-    textarea {
-      width: 100%;
-      font-size: 1rem;
-      font-family: var(--font-prose);
-      padding: 0.65rem 0.75rem;
-      min-height: 48px;
-      background-color: var(--bg-base);
-      color: var(--text-main);
-      border: 1px solid var(--border-subtle);
-      border-radius: 6px;
-    }
-
-    textarea {
-      min-height: 150px;
-      resize: vertical;
-      line-height: 1.6;
-    }
-
-    input:focus-visible,
-    select:focus-visible,
-    textarea:focus-visible,
-    button:focus-visible {
-      outline: 3px solid var(--border-focus);
-      outline-offset: 2px;
-    }
-
-    input:invalid:user-invalid,
-    textarea:invalid:user-invalid {
-      border-color: var(--status-red);
-    }
-
-    .radio-group,
-    .checkbox-group {
+    /* ── Component 2: Text & Speak ──────────────────────────────────── */
+    .text-toolbar {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.75rem;
+      align-items: center;
+      gap: 0.35rem;
     }
 
-    .choice-pill {
+    .toggle-chip {
       display: inline-flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 0.85rem;
-      min-height: 48px;
-      background-color: var(--bg-base);
-      border: 1px solid var(--border-subtle);
+      gap: 0.3rem;
+      padding: 0.22rem 0.55rem;
+      min-height: 32px;
       border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      background-color: var(--bg-hud);
+      border: 1px solid var(--border-base);
+      color: var(--text-muted);
       cursor: pointer;
       user-select: none;
     }
 
-    .choice-pill:has(input:checked) {
-      border-color: var(--brand-color);
-      background-color: var(--bg-elevated);
-      box-shadow: var(--panel-shadow);
+    .toggle-chip input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
     }
 
-    /* Fallback for older browsers without accent-color */
-    @supports not (accent-color: var(--brand-color)) {
-      input[type="checkbox"],
-      input[type="radio"] {
-        outline: 1px solid var(--brand-color);
-      }
-    }
-
-    .tag-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem;
-      margin-block-top: 0.5rem;
-    }
-
-    button {
-      font-family: var(--font-mono);
-      font-size: 0.95rem;
-      min-height: 48px;
-      padding: 0.6rem 1.1rem;
-      border-radius: 6px;
-      border: 1px solid var(--border-subtle);
-      background-color: var(--bg-elevated);
+    .toggle-chip:has(input:checked) {
+      border-color: var(--c2-text);
+      background-color: color-mix(in srgb, var(--c2-text) 18%, var(--bg-hud));
       color: var(--text-main);
+      font-weight: 700;
+    }
+
+    textarea#text-input {
+      width: 100%;
+      min-height: 104px;
+      max-height: 280px;
+      resize: vertical;
+      line-height: 1.5;
+      margin-bottom: 0.55rem;
+      border-color: color-mix(in srgb, var(--c2-text) 30%, var(--border-base));
+    }
+
+    .speak-btn {
+      width: 100%;
+      min-height: 46px;
+      background-color: var(--c2-text);
+      color: #06080e;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.98rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
       cursor: pointer;
-      transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 14px color-mix(in srgb, var(--c2-text) 32%, transparent);
     }
 
-    button:hover:not(:disabled) {
-      border-color: var(--text-soft);
-      box-shadow: var(--panel-shadow);
+    .speak-btn:hover:not(:disabled) {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
     }
 
-    button:disabled {
-      opacity: 0.55;
+    .speak-btn:disabled {
+      opacity: 0.5;
       cursor: not-allowed;
     }
 
-    button.btn-primary {
-      background-color: var(--btn-primary-bg);
-      border: 2px solid var(--btn-primary-border);
-      color: #ffffff;
-      font-weight: 700;
-      width: 100%;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      box-shadow: var(--panel-shadow);
+    /* ── Collapsible <details> Cards (Options, Terminal, Files) ─────── */
+    details.comp-card {
+      padding: 0;
     }
 
-    button.btn-primary:hover:not(:disabled) {
-      background-color: var(--btn-primary-hover);
+    details.comp-card > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 0.7rem 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      user-select: none;
     }
 
-    button.btn-chip {
-      min-height: 34px;
-      padding: 0.25rem 0.6rem;
-      font-size: 0.8rem;
-      color: var(--text-soft);
+    details.comp-card > summary::-webkit-details-marker {
+      display: none;
     }
 
-    /* 3-Line Teleprompter HUD */
-    .teleprompter-hud {
-      background-color: var(--bg-hud);
-      background-image: var(--hud-grid-bg);
-      background-size: 28px 28px;
-      border: 2px solid var(--border-subtle);
-      box-shadow: var(--panel-shadow);
-      border-radius: 8px;
-      padding: 1.5rem 1.25rem;
+    .summary-right {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
       font-family: var(--font-mono);
-      margin-block-end: 1.5rem;
+      font-size: 0.76rem;
+      color: var(--text-muted);
     }
 
-    .caption-aperture {
-      min-height: 5.4rem;
+    .chevron {
+      display: inline-block;
+      transition: transform 0.18s ease;
+      color: var(--comp-color);
+      font-size: 0.8rem;
+    }
+
+    details[open] > summary .chevron {
+      transform: rotate(180deg);
+    }
+
+    .details-body {
+      padding: 0 0.9rem 0.8rem 0.9rem;
+      border-top: 1px solid color-mix(in srgb, var(--comp-color) 18%, transparent);
+      padding-top: 0.65rem;
+    }
+
+    .options-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.45rem;
+    }
+
+    @media (max-width: 440px) {
+      .options-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .options-grid .field-compact:first-child {
+        grid-column: 1 / -1;
+      }
+    }
+
+    /* ── Component 4: Player & Captions ─────────────────────────────── */
+    .caption-viewport {
+      background-color: var(--bg-hud);
+      border: 1px solid color-mix(in srgb, var(--c4-player) 28%, transparent);
+      border-radius: 7px;
+      padding: 0.75rem 0.85rem;
+      font-family: var(--font-mono);
+      margin-bottom: 0.65rem;
+    }
+
+    .caption-viewport.mode-window {
+      min-height: 5.1rem;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 0.45rem;
-      margin-block-end: 1.25rem;
+      gap: 0.35rem;
+    }
+
+    .caption-viewport.mode-scroll {
+      max-height: 180px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      scroll-behavior: smooth;
     }
 
     .caption-line {
-      min-height: 1.5rem;
-      font-size: 1.08rem;
-      line-height: 1.45;
-      white-space: pre-wrap;
+      min-height: 1.35rem;
+      font-size: 0.98rem;
+      line-height: 1.4;
       word-break: break-word;
     }
 
     .word-past {
-      color: var(--text-soft);
-      text-shadow: var(--text-glow);
+      color: color-mix(in srgb, var(--c4-player) 78%, #ffffff);
     }
 
     .word-active-bold {
-      color: var(--text-bright);
-      font-weight: 700;
-      text-shadow: var(--active-word-glow);
+      color: var(--c4-player);
+      font-weight: 800;
+      text-shadow: 0 0 var(--glow-strength) var(--c4-player);
     }
 
     .word-active-underline {
-      color: var(--text-bright);
+      color: var(--c4-player);
       text-decoration: underline;
-      text-shadow: var(--active-word-glow);
     }
 
     .word-active-both {
-      color: var(--text-bright);
-      font-weight: 700;
+      color: var(--c4-player);
+      font-weight: 800;
       text-decoration: underline;
-      text-shadow: var(--active-word-glow);
     }
 
     .word-active-inverse {
-      background-color: var(--text-bright);
-      color: #000000;
-      font-weight: 700;
-      padding-inline: 2px;
-      border-radius: 2px;
+      background-color: var(--c4-player);
+      color: #04080e;
+      font-weight: 800;
+      padding-inline: 3px;
+      border-radius: 3px;
     }
 
     .word-future {
       color: var(--text-dim);
     }
 
-    .telemetry-bar {
+    .telemetry-strip {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      gap: 0.85rem;
-      font-size: 0.92rem;
-      padding-block-start: 0.75rem;
-      border-block-start: 1px solid var(--border-subtle);
+      gap: 0.55rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      margin-bottom: 0.55rem;
     }
 
-    .voice-badge {
-      font-weight: 700;
+    .voice-pill {
+      font-weight: 800;
       letter-spacing: 0.04em;
-      text-shadow: var(--text-glow);
-    }
-
-    .status-beacon {
-      font-weight: 600;
     }
 
     .beacon-play {
-      color: var(--status-green);
-      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
+      color: var(--c4-player);
+      font-weight: 700;
     }
 
     .beacon-idle {
       color: var(--text-dim);
     }
 
-    .hud-progress-track {
+    .progress-track {
       flex: 1;
-      min-width: 120px;
-      height: 10px;
+      height: 8px;
       background-color: var(--bg-elevated);
-      border: 1px solid var(--border-subtle);
-      border-radius: 4px;
+      border-radius: 99px;
       overflow: hidden;
       cursor: pointer;
     }
 
-    .hud-progress-fill {
+    .progress-fill {
       height: 100%;
       width: 0%;
-      background-color: var(--text-bright);
-      box-shadow: var(--active-word-glow);
-      transition: width 0.08s linear;
+      background-color: var(--c4-player);
+      transition: width 0.06s linear;
     }
 
-    .hud-controls {
+    .player-bar {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      margin-block-top: 1rem;
+      gap: 0.5rem;
+    }
+
+    .play-btn {
+      min-height: 38px;
+      padding: 0.3rem 0.75rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-color: var(--c4-player);
+      color: var(--c4-player);
+      background-color: color-mix(in srgb, var(--c4-player) 12%, var(--bg-hud));
+      cursor: pointer;
+      white-space: nowrap;
     }
 
     audio {
       flex: 1;
-      height: 40px;
+      height: 36px;
+      min-width: 0;
     }
 
-    /* Live Terminal SSE Output */
+    /* ── Component 5: Terminal Output ───────────────────────────────── */
     .terminal-log {
       background-color: var(--bg-hud);
-      border: 1px solid var(--border-subtle);
+      border: 1px solid color-mix(in srgb, var(--c5-terminal) 25%, transparent);
       border-radius: 6px;
-      padding: 0.9rem 1rem;
+      padding: 0.6rem 0.75rem;
       font-family: var(--font-mono);
-      font-size: 0.88rem;
-      min-height: 180px;
-      max-height: 320px;
+      font-size: 0.8rem;
+      max-height: 190px;
       overflow-y: auto;
       white-space: pre-wrap;
-      color: var(--text-main);
+      word-break: break-word;
     }
 
-    .log-line {
-      margin-block-end: 0.25rem;
-    }
+    .log-line { margin-bottom: 0.2rem; }
+    .log-line.cmd { color: var(--c2-text); }
+    .log-line.cr { color: var(--c5-terminal); }
+    .log-line.done-ok { color: var(--status-ok); font-weight: 700; }
+    .log-line.done-err { color: var(--status-err); font-weight: 700; }
 
-    .log-line.cmd {
-      color: var(--status-yellow);
-    }
-
-    .log-line.cr {
-      color: var(--text-bright);
-    }
-
-    .log-line.done-ok {
-      color: var(--status-green);
-      font-weight: 700;
-    }
-
-    .log-line.done-err {
-      color: var(--status-red);
-      font-weight: 700;
-    }
-
-    /* Outputs List */
-    .outputs-list {
+    /* ── Component 6: Saved WAV Files ───────────────────────────────── */
+    .files-list {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
-      max-height: 420px;
+      gap: 0.45rem;
+      max-height: 260px;
       overflow-y: auto;
     }
 
-    .output-card {
-      background-color: var(--bg-base);
-      border: 1px solid var(--border-subtle);
+    .file-row {
+      background-color: var(--bg-hud);
+      border: 1px solid color-mix(in srgb, var(--c6-files) 22%, transparent);
       border-radius: 6px;
-      padding: 0.85rem;
+      padding: 0.5rem 0.65rem;
       display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-
-    .output-card-header {
-      display: flex;
-      flex-wrap: wrap;
+      align-items: center;
       justify-content: space-between;
-      align-items: center;
       gap: 0.5rem;
+    }
+
+    .file-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .file-title {
       font-family: var(--font-mono);
-      font-size: 0.85rem;
-    }
-
-    .output-transcript {
-      font-size: 0.9rem;
-      color: var(--text-muted);
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
+      font-size: 0.8rem;
+      color: var(--text-main);
+      white-space: nowrap;
       overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .output-actions {
+    .file-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-actions {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+
+    .link-dl {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 0.2rem 0.5rem;
+      border-radius: 5px;
+      border: 1px solid var(--border-base);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--c6-files);
+      text-decoration: none;
+    }
+
+    #form-error {
+      color: var(--status-err);
+      font-size: 0.82rem;
+      margin-bottom: 0.4rem;
+      display: none;
     }
   </style>
 </head>
 <body>
+  <!-- Multi-Layer Parallax Background (Guided by Parallax-scrolling-examples.md) -->
+  <div class="parallax-stage" aria-hidden="true">
+    <div class="parallax-layer parallax-bg"></div>
+    <div class="parallax-layer parallax-mid">
+      <div class="geo-shape geo-1"></div>
+      <div class="geo-shape geo-2"></div>
+      <div class="geo-shape geo-3"></div>
+    </div>
+  </div>
+
+  <!-- Compact Sticky Header -->
   <header>
-    <h1 class="brand-title">
+    <h1 class="app-brand">
       <span>speak</span>
-      <span class="brand-subtitle" id="theme-tagline">Lothal Astromech — 3-Line Telemetry Sidecar</span>
+      <span class="app-version" id="schema-badge">v0.2.0</span>
     </h1>
 
-    <div class="header-controls">
-      <div class="theme-switcher" role="radiogroup" aria-label="Color Theme">
-        <span class="theme-switcher-label">THEME:</span>
-        <label class="theme-option" for="theme-lothal">
-          <input type="radio" id="theme-lothal" name="ui_theme" value="lothal" checked>
-          <span>◇ Lothal Astromech</span>
-        </label>
-        <label class="theme-option" for="theme-arcade">
-          <input type="radio" id="theme-arcade" name="ui_theme" value="arcade">
-          <span>🕹️ 1984 Vector Arcade</span>
-        </label>
-      </div>
+    <div class="top-bar-controls">
+      <select id="cli-runner-select" class="select-mini" aria-label="Run CLI Command">
+        <option value="">CLI ▾</option>
+        <option value="voices --all">speak voices --all</option>
+        <option value="daemon status">speak daemon status</option>
+        <option value="set">speak set</option>
+        <option value="--help">speak --help</option>
+      </select>
 
-      <div class="quick-actions" id="quick-subcommands" role="toolbar" aria-label="CLI Subcommands">
-        <button type="button" data-subcmd="voices --all">speak voices --all</button>
-        <button type="button" data-subcmd="daemon status">speak daemon status</button>
-        <button type="button" data-subcmd="set">speak set (config)</button>
-        <button type="button" data-subcmd="--help">speak --help</button>
-      </div>
+      <select id="theme-select" class="select-mini" aria-label="Visual Theme">
+        <option value="lothal">◇ Lothal</option>
+        <option value="arcade">🕹️ 1984 Arcade</option>
+      </select>
+
+      <button type="button" id="parallax-toggle" class="btn-mini" aria-pressed="true" title="Toggle parallax depth">
+        ✦ Depth
+      </button>
     </div>
   </header>
 
   <main>
-    <!-- Left Column: Introspected CLI Form -->
-    <section aria-labelledby="form-heading">
-      <div class="panel">
-        <h2 class="panel-title" id="form-heading">
-          <span>Synthesize &amp; Narrate</span>
-          <span id="schema-badge" class="hint">Introspecting CLI...</span>
-        </h2>
-
-        <form id="speak-form" action="/api/run" method="POST">
-          <fieldset>
-            <legend>1. Engine &amp; Persona</legend>
-
-            <div class="form-group">
-              <span class="field-label" id="engine-label">Synthesis Engine (<code>-e, --engine</code>)</span>
-              <div class="radio-group" id="engine-radios" role="radiogroup" aria-labelledby="engine-label">
-                <!-- Populated dynamically from /api/schema -->
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="field-label" for="voice-select">Voice Persona (<code>-v, --voice</code>)</label>
-              <select id="voice-select" name="voice" aria-describedby="voice-intent-hint">
-                <!-- Populated dynamically from /api/schema -->
-              </select>
-              <span id="voice-intent-hint" class="hint">Select a persona to see its style and realization.</span>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>2. Narration Text &amp; Audio Tags</legend>
-
-            <div class="form-group">
-              <label class="field-label" for="text-input">Prose / Transcript</label>
-              <textarea
-                id="text-input"
-                name="text"
-                placeholder="Enter prose to synthesize, or check 'Read from macOS Clipboard (-c)' below..."
-                aria-describedby="text-hint"
-              >All systems nominal, captain. Visual telemetry is online and tracking word by word.</textarea>
-              <span id="text-hint" class="hint">Press Cmd+Enter (or Ctrl+Enter) to synthesize immediately.</span>
-
-              <div class="tag-chips" id="audio-tags-bar" aria-label="Insert audio tag">
-                <!-- Populated from /api/schema -->
-              </div>
-            </div>
-
-            <div class="form-group checkbox-group">
-              <label class="choice-pill" for="flag-clipboard">
-                <input type="checkbox" id="flag-clipboard" name="clipboard">
-                <span>Read Clipboard (<code>-c</code>)</span>
-              </label>
-              <label class="choice-pill" for="flag-raw">
-                <input type="checkbox" id="flag-raw" name="raw">
-                <span>Raw / No Optimizer (<code>-r</code>)</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>3. Teleprompter &amp; Output Routing</legend>
-
-            <div class="form-group">
-              <span class="field-label" id="target-label">Playback Target</span>
-              <div class="radio-group" role="radiogroup" aria-labelledby="target-label">
-                <label class="choice-pill" for="target-browser">
-                  <input type="radio" id="target-browser" name="playback_target" value="browser" checked>
-                  <span>Save WAV &amp; Play in Browser Teleprompter (<code>-o</code>)</span>
-                </label>
-                <label class="choice-pill" for="target-host">
-                  <input type="radio" id="target-host" name="playback_target" value="host">
-                  <span>Play directly on Mac Terminal/Speaker</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="field-label" for="emphasis-select">Active Word Emphasis</label>
-              <select id="emphasis-select" name="emphasis">
-                <option value="bold" selected>Bold Electric Glow (Default — No Underline)</option>
-                <option value="underline">Underline Only</option>
-                <option value="both">Bold + Underline</option>
-                <option value="inverse">Inverse Block</option>
-              </select>
-            </div>
-          </fieldset>
-
-          <div id="form-error" role="alert" aria-live="polite" style="color: var(--status-red); margin-block-end: 0.75rem;"></div>
-
-          <button type="submit" id="submit-btn" class="btn-primary">
-            Synthesize Speech
-          </button>
-        </form>
-      </div>
-    </section>
-
-    <!-- Right Column: 3-Line Teleprompter + Live SSE Console + Artifact Browser -->
-    <section aria-label="Teleprompter and Live Telemetry">
-      <!-- 3-Line Web Teleprompter -->
-      <div class="teleprompter-hud" aria-label="3-Line Closed Captioning Teleprompter">
-        <div class="caption-aperture" id="caption-aperture">
-          <div class="caption-line word-past" id="cap-line-0"></div>
-          <div class="caption-line" id="cap-line-1">Ready for synthesis.</div>
-          <div class="caption-line word-future" id="cap-line-2"></div>
+    <!-- Left / Primary Column: 1. Voice, 2. Text, 3. Options -->
+    <form id="speak-form" class="col-stack" action="/api/run" method="POST">
+      <!-- COMPONENT 1: VOICE & ENGINE (Cyan) -->
+      <section class="comp-card comp-1" aria-label="Voice and Engine">
+        <div class="comp-header">
+          <h2 class="comp-title"><span class="comp-num">1</span> Voice</h2>
+          <span class="comp-meta" id="voice-realization-meta">-e kokoro · -v river</span>
         </div>
 
-        <div class="telemetry-bar">
-          <span class="voice-badge" id="hud-voice" style="color: #00f5d4;">RIVER</span>
-          <span class="status-beacon beacon-idle" id="hud-beacon">○ IDLE</span>
-          <div class="hud-progress-track" id="hud-progress-track" title="Click to seek">
-            <div class="hud-progress-fill" id="hud-progress-fill"></div>
+        <div class="voice-engine-grid">
+          <div class="field-compact">
+            <label class="field-micro-label" for="engine-select">
+              <span>Engine</span><code>-e</code>
+            </label>
+            <select id="engine-select" name="engine"></select>
+          </div>
+
+          <div class="field-compact">
+            <label class="field-micro-label" for="voice-select">
+              <span>Voice</span><code>-v</code>
+            </label>
+            <select id="voice-select" name="voice"></select>
+          </div>
+        </div>
+      </section>
+
+      <!-- COMPONENT 2: TEXT & SPEAK (Amber / Yellow) -->
+      <section class="comp-card comp-2" aria-label="Text Input">
+        <div class="comp-header">
+          <h2 class="comp-title"><span class="comp-num">2</span> Text</h2>
+
+          <div class="text-toolbar">
+            <label class="toggle-chip" for="flag-clipboard" title="Read text from macOS clipboard (-c)">
+              <input type="checkbox" id="flag-clipboard" name="clipboard">
+              <span>-c Clip</span>
+            </label>
+
+            <label class="toggle-chip" for="flag-raw" title="Skip narration optimizer (-r)">
+              <input type="checkbox" id="flag-raw" name="raw">
+              <span>-r Raw</span>
+            </label>
+
+            <select id="tag-insert-select" class="select-mini" aria-label="Insert audio tag">
+              <option value="">+ [tag] ▾</option>
+            </select>
+          </div>
+        </div>
+
+        <textarea
+          id="text-input"
+          name="text"
+          placeholder="Paste or type text to speak..."
+          aria-label="Text to speak"
+        >All systems nominal, captain. Visual telemetry is online and tracking word by word.</textarea>
+
+        <div id="form-error" role="alert" aria-live="polite"></div>
+
+        <button type="submit" id="submit-btn" class="speak-btn">
+          <span>▶ Speak</span>
+        </button>
+      </section>
+
+      <!-- COMPONENT 3: OPTIONS (Violet — Collapsible Pulldown Drawer) -->
+      <details class="comp-card comp-3" id="options-details">
+        <summary>
+          <span class="comp-title"><span class="comp-num">3</span> Options</span>
+          <span class="summary-right">
+            <span id="options-summary-text">Browser · Bold · Scroll</span>
+            <span class="chevron">▾</span>
+          </span>
+        </summary>
+
+        <div class="details-body">
+          <div class="options-grid">
+            <div class="field-compact">
+              <label class="field-micro-label" for="target-select">
+                <span>Output</span><code>-o</code>
+              </label>
+              <select id="target-select" name="playback_target">
+                <option value="browser" selected>Browser Player</option>
+                <option value="host">Mac Speaker</option>
+              </select>
+            </div>
+
+            <div class="field-compact">
+              <label class="field-micro-label" for="emphasis-select">
+                <span>Emphasis</span>
+              </label>
+              <select id="emphasis-select" name="emphasis">
+                <option value="bold" selected>Bold</option>
+                <option value="underline">Underline</option>
+                <option value="both">Bold + Line</option>
+                <option value="inverse">Inverse</option>
+              </select>
+            </div>
+
+            <div class="field-compact">
+              <label class="field-micro-label" for="view-select">
+                <span>View</span><code>--view</code>
+              </label>
+              <select id="view-select" name="view">
+                <option value="scroll" selected>Scroll</option>
+                <option value="window">3-Line</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </details>
+    </form>
+
+    <!-- Right / Secondary Column: 4. Player, 5. Terminal, 6. Files -->
+    <div class="col-stack">
+      <!-- COMPONENT 4: PLAYER & CAPTIONS (Emerald Green) -->
+      <section class="comp-card comp-4" aria-label="Player and Captions">
+        <div class="comp-header">
+          <h2 class="comp-title"><span class="comp-num">4</span> Player</h2>
+          <span class="comp-meta" id="hud-time">00:00 / 00:00</span>
+        </div>
+
+        <div class="caption-viewport mode-scroll" id="caption-aperture"></div>
+
+        <div class="telemetry-strip">
+          <span class="voice-pill" id="hud-voice" style="color: var(--c1-voice);">RIVER</span>
+          <span class="beacon-idle" id="hud-beacon">○ IDLE</span>
+          <div class="progress-track" id="hud-progress-track" title="Tap to seek">
+            <div class="progress-fill" id="hud-progress-fill"></div>
           </div>
           <span id="hud-pct">0%</span>
-          <span id="hud-time">00:00/00:00</span>
         </div>
 
-        <div class="hud-controls">
-          <button type="button" id="play-pause-btn">▶ Play / Pause (Space)</button>
+        <div class="player-bar">
+          <button type="button" id="play-pause-btn" class="play-btn">▶ Play</button>
           <audio id="audio-player" controls preload="metadata"></audio>
         </div>
-      </div>
+      </section>
 
-      <!-- Live SSE Process Stream -->
-      <div class="panel">
-        <div class="panel-title">
-          <span>Live CLI Stream (SSE <code>text/event-stream</code>)</span>
-          <button type="button" id="clear-log-btn" class="btn-chip">Clear Log</button>
+      <!-- COMPONENT 5: TERMINAL OUTPUT (Sky Blue — Collapsible) -->
+      <details class="comp-card comp-5" id="terminal-details" open>
+        <summary>
+          <span class="comp-title"><span class="comp-num">5</span> Terminal</span>
+          <span class="summary-right">
+            <span id="terminal-status-badge">idle</span>
+            <button type="button" id="clear-log-btn" class="btn-mini" style="min-height: 26px; padding: 0.1rem 0.45rem;">Clear</button>
+            <span class="chevron">▾</span>
+          </span>
+        </summary>
+        <div class="details-body">
+          <div class="terminal-log" id="terminal-log" role="log" aria-live="polite"></div>
         </div>
-        <div class="terminal-log" id="terminal-log" role="log" aria-live="polite"></div>
-      </div>
+      </details>
 
-      <!-- Artifact / Output Browser -->
-      <div class="panel">
-        <div class="panel-title">
-          <span>Generated Audio Artifacts (<code>/api/outputs</code>)</span>
-          <button type="button" id="refresh-outputs-btn" class="btn-chip">↻ Refresh</button>
+      <!-- COMPONENT 6: SAVED FILES (Coral / Magenta — Collapsible) -->
+      <details class="comp-card comp-6" id="files-details" open>
+        <summary>
+          <span class="comp-title"><span class="comp-num">6</span> Files</span>
+          <span class="summary-right">
+            <span id="files-count-badge">0 wav</span>
+            <button type="button" id="refresh-outputs-btn" class="btn-mini" style="min-height: 26px; padding: 0.1rem 0.45rem;">↻</button>
+            <span class="chevron">▾</span>
+          </span>
+        </summary>
+        <div class="details-body">
+          <div class="files-list" id="outputs-list"></div>
         </div>
-        <div class="outputs-list" id="outputs-list"></div>
-      </div>
-    </section>
+      </details>
+    </div>
   </main>
 
   <script>
-    const THEME_META = {
-      lothal: {
-        tagline: "Lothal Astromech — 3-Line Telemetry Sidecar",
-        submitLabel: "Synthesize Speech",
-      },
-      arcade: {
-        tagline: "1984 Vector Arcade — INSERT COIN · HIGH SCORE EDITION",
-        submitLabel: "🕹️ INSERT COIN & SYNTHESIZE (1UP)",
-      },
-    };
-
     const state = {
       schema: null,
       selectedEngine: "kokoro",
@@ -791,83 +1000,131 @@
       activeTranscript: "All systems nominal, captain. Visual telemetry is online and tracking word by word.",
       words: [],
       lineGroups: [],
+      wordTimings: [],
       emphasis: "bold",
+      viewMode: "scroll",
       isRunning: false,
       theme: document.documentElement.dataset.theme || "lothal",
+      parallax: document.documentElement.dataset.parallax || "on",
     };
 
-    const engineRadiosEl = document.getElementById("engine-radios");
+    const engineSelectEl = document.getElementById("engine-select");
     const voiceSelectEl = document.getElementById("voice-select");
-    const voiceIntentHintEl = document.getElementById("voice-intent-hint");
-    const audioTagsBarEl = document.getElementById("audio-tags-bar");
+    const voiceMetaEl = document.getElementById("voice-realization-meta");
+    const tagInsertSelectEl = document.getElementById("tag-insert-select");
     const textInputEl = document.getElementById("text-input");
     const speakFormEl = document.getElementById("speak-form");
     const submitBtnEl = document.getElementById("submit-btn");
-    const terminalLogEl = document.getElementById("terminal-log");
-    const outputsListEl = document.getElementById("outputs-list");
-    const audioPlayerEl = document.getElementById("audio-player");
-    const playPauseBtnEl = document.getElementById("play-pause-btn");
+    const targetSelectEl = document.getElementById("target-select");
     const emphasisSelectEl = document.getElementById("emphasis-select");
-    const themeTaglineEl = document.getElementById("theme-tagline");
-
-    const capLines = [
-      document.getElementById("cap-line-0"),
-      document.getElementById("cap-line-1"),
-      document.getElementById("cap-line-2"),
-    ];
+    const viewSelectEl = document.getElementById("view-select");
+    const optionsSummaryTextEl = document.getElementById("options-summary-text");
+    const captionApertureEl = document.getElementById("caption-aperture");
     const hudVoiceEl = document.getElementById("hud-voice");
     const hudBeaconEl = document.getElementById("hud-beacon");
     const hudProgressFillEl = document.getElementById("hud-progress-fill");
     const hudProgressTrackEl = document.getElementById("hud-progress-track");
     const hudPctEl = document.getElementById("hud-pct");
     const hudTimeEl = document.getElementById("hud-time");
+    const audioPlayerEl = document.getElementById("audio-player");
+    const playPauseBtnEl = document.getElementById("play-pause-btn");
+    const terminalLogEl = document.getElementById("terminal-log");
+    const terminalStatusBadgeEl = document.getElementById("terminal-status-badge");
+    const outputsListEl = document.getElementById("outputs-list");
+    const filesCountBadgeEl = document.getElementById("files-count-badge");
+    const themeSelectEl = document.getElementById("theme-select");
+    const cliRunnerSelectEl = document.getElementById("cli-runner-select");
+    const parallaxToggleEl = document.getElementById("parallax-toggle");
 
+    /* ── Visual-Only Theme & Parallax Depth Controls ────────────────── */
     function applyTheme(themeId, persist = true) {
       const resolved = themeId === "arcade" ? "arcade" : "lothal";
       state.theme = resolved;
       document.documentElement.dataset.theme = resolved;
-
-      const radioEl = document.getElementById(`theme-${resolved}`);
-      if (radioEl) radioEl.checked = true;
-
-      const meta = THEME_META[resolved] || THEME_META.lothal;
-      themeTaglineEl.textContent = meta.tagline;
-      submitBtnEl.textContent = meta.submitLabel;
-
+      themeSelectEl.value = resolved;
       if (persist) {
-        try {
-          localStorage.setItem("speak-theme", resolved);
-        } catch (_) {}
+        try { localStorage.setItem("speak-theme", resolved); } catch (_) {}
       }
     }
 
-    // Bind theme radio buttons
-    document.querySelectorAll('input[name="ui_theme"]').forEach((radio) => {
-      radio.addEventListener("change", (e) => {
-        if (e.target.checked) {
-          applyTheme(e.target.value, true);
-        }
-      });
-    });
-
-    // Cross-tab synchronization via storage event
-    window.addEventListener("storage", (e) => {
-      if (e.key === "speak-theme" && e.newValue) {
-        applyTheme(e.newValue, false);
+    function applyParallax(mode, persist = true) {
+      const resolved = mode === "off" ? "off" : "on";
+      state.parallax = resolved;
+      document.documentElement.dataset.parallax = resolved;
+      parallaxToggleEl.setAttribute("aria-pressed", resolved === "on" ? "true" : "false");
+      if (persist) {
+        try { localStorage.setItem("speak-parallax", resolved); } catch (_) {}
       }
+    }
+
+    themeSelectEl.addEventListener("change", () => applyTheme(themeSelectEl.value, true));
+    parallaxToggleEl.addEventListener("click", () => {
+      applyParallax(state.parallax === "on" ? "off" : "on", true);
     });
 
-    // Initialize theme state on load
+    window.addEventListener("scroll", () => {
+      if (state.parallax === "on") {
+        document.documentElement.style.setProperty("--scroll-y", `${window.scrollY}px`);
+      }
+    }, { passive: true });
+
+    window.addEventListener("pointermove", (e) => {
+      if (state.parallax === "on") {
+        const cx = e.clientX - window.innerWidth / 2;
+        const cy = e.clientY - window.innerHeight / 2;
+        document.documentElement.style.setProperty("--mouse-x", `${cx}px`);
+        document.documentElement.style.setProperty("--mouse-y", `${cy}px`);
+      }
+    }, { passive: true });
+
     applyTheme(state.theme, false);
+    applyParallax(state.parallax, false);
 
-    function formatMMSS(sec) {
-      if (!Number.isFinite(sec) || sec < 0) return "00:00";
-      const m = Math.floor(sec / 60);
-      const s = Math.floor(sec % 60);
-      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    /* ── Options Summary Pill Updater ───────────────────────────────── */
+    function updateOptionsSummary() {
+      const tLabel = targetSelectEl.value === "browser" ? "Browser" : "Mac";
+      const eLabel = emphasisSelectEl.options[emphasisSelectEl.selectedIndex]?.text || "Bold";
+      const vLabel = viewSelectEl.options[viewSelectEl.selectedIndex]?.text || "Scroll";
+      optionsSummaryTextEl.textContent = `${tLabel} · ${eLabel} · ${vLabel}`;
     }
 
-    function wrapWordsIntoLines(words, maxChars = 48) {
+    targetSelectEl.addEventListener("change", updateOptionsSummary);
+    emphasisSelectEl.addEventListener("change", () => {
+      state.emphasis = emphasisSelectEl.value;
+      updateOptionsSummary();
+      renderTeleprompterFrame(audioPlayerEl.currentTime || 0, audioPlayerEl.duration || 1);
+    });
+    viewSelectEl.addEventListener("change", () => {
+      state.viewMode = viewSelectEl.value;
+      captionApertureEl.className = `caption-viewport mode-${state.viewMode}`;
+      updateOptionsSummary();
+      renderTeleprompterFrame(audioPlayerEl.currentTime || 0, audioPlayerEl.duration || 1);
+    });
+
+    /* ── Markdown Cleaning & Per-Clause Timing Support ──────────────── */
+    function cleanMarkdown(text) {
+      if (!text) return "";
+      return text
+        .replace(/^\s*```[^\n]*\n?/gm, "\n")
+        .replace(/^\s*(?:[*_\-]\s*){3,}\s*$/gm, "\n")
+        .replace(/(?:^|\s)\*{3,}(?:\s|$)/g, " ")
+        .replace(/^\s*#{1,6}\s+(.+?)\s*#*$/gm, "$1:")
+        .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/\*{1,3}([^*\n]+?)\*{1,3}/g, "$1")
+        .replace(/`+([^`\n]+?)`+/g, "$1")
+        .replace(/\*+/g, "")
+        .trim();
+    }
+
+    function estimateSyllables(w) {
+      const clean = w.replace(/[^a-zA-Z]/g, "").toLowerCase();
+      if (clean.length <= 3) return 1;
+      const m = clean.match(/[aeiouy]+/g);
+      return m ? Math.max(1, m.length) : 1;
+    }
+
+    function wrapWordsIntoLines(words, maxChars = 44) {
       const groups = [];
       let current = [];
       let curLen = 0;
@@ -881,127 +1138,183 @@
         } else {
           current.push(w);
           curLen += (current.length === 1 ? wLen : 1 + wLen);
-          if (
-            curLen >= maxChars * 0.55 &&
-            (w.endsWith(".") || w.endsWith("!") || w.endsWith("?") || w.endsWith(";") || w.endsWith(":"))
-          ) {
+          if (w.endsWith(".") || w.endsWith("!") || w.endsWith("?") || (curLen >= 18 && (w.endsWith(",") || w.endsWith(":") || w.endsWith(";")))) {
             groups.push(current);
             current = [];
             curLen = 0;
           }
         }
       }
-      if (current.length > 0) {
-        groups.push(current);
-      }
+      if (current.length > 0) groups.push(current);
       return groups;
     }
 
-    function setTeleprompterTranscript(text, voiceId = "river") {
-      state.activeTranscript = text || "";
-      state.words = state.activeTranscript.trim().split(/\s+/).filter(Boolean);
-      state.lineGroups = wrapWordsIntoLines(state.words, 48);
+    function setTeleprompterTranscript(text, voiceId = "river", timingMeta = null) {
+      const cleaned = cleanMarkdown(text || "");
+      state.activeTranscript = cleaned;
+      state.words = [];
+      state.lineGroups = [];
+      state.wordTimings = [];
+
+      if (timingMeta && Array.isArray(timingMeta.clauses) && timingMeta.clauses.length > 0) {
+        for (const c of timingMeta.clauses) {
+          const cWords = (c.words && c.words.length) ? c.words : (c.text || "").split(/\s+/).filter(Boolean);
+          if (!cWords.length) continue;
+          const cStart = Number(c.start || 0);
+          const cEnd = Number(c.speech_end ?? c.end ?? (cStart + 0.2));
+          const cDur = Math.max(0.02, cEnd - cStart);
+
+          const cLines = wrapWordsIntoLines(cWords, 44);
+          state.lineGroups.push(...cLines);
+          state.words.push(...cWords);
+
+          const weights = cWords.map(estimateSyllables);
+          const totW = weights.reduce((a, b) => a + b, 0) || 1;
+          let tCursor = cStart;
+          for (const wWeight of weights) {
+            const wDur = cDur * (wWeight / totW);
+            state.wordTimings.push([tCursor, tCursor + wDur]);
+            tCursor += wDur;
+          }
+        }
+      } else {
+        state.words = cleaned.split(/\s+/).filter(Boolean);
+        state.lineGroups = wrapWordsIntoLines(state.words, 44);
+      }
 
       const persona = (state.schema?.personas || []).find(
         (p) => p.id.toLowerCase() === (voiceId || "").toLowerCase()
       );
       hudVoiceEl.textContent = (voiceId || "VOICE").toUpperCase();
-      hudVoiceEl.style.color = persona ? persona.hex_color : "#00f5d4";
+      hudVoiceEl.style.color = persona ? persona.hex_color : "var(--c1-voice)";
 
-      renderTeleprompterFrame(0, audioPlayerEl.duration || 1);
+      renderTeleprompterFrame(0, audioPlayerEl.duration || timingMeta?.total_duration || 1);
     }
 
-    function renderTeleprompterFrame(elapsed, duration) {
-      for (const el of capLines) {
-        el.textContent = "";
-        el.className = "caption-line";
-      }
-
-      if (!state.words.length || !state.lineGroups.length) {
-        capLines[1].textContent = "No transcript loaded.";
-        return;
-      }
-
-      const ratio = duration > 0 ? Math.min(1.0, Math.max(0, elapsed / duration)) : 0;
+    function findActiveWordPosition(elapsed, duration) {
       const totalWords = state.words.length;
-      const currWordIdx = minMax(Math.floor(ratio * totalWords), 0, totalWords - 1);
+      if (!totalWords || !state.lineGroups.length) return [0, 0];
+
+      let currWordIdx = 0;
+      if (state.wordTimings.length === totalWords) {
+        for (let i = 0; i < totalWords; i++) {
+          if (elapsed >= state.wordTimings[i][0]) {
+            currWordIdx = i;
+          } else {
+            break;
+          }
+        }
+      } else {
+        const ratio = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 0;
+        currWordIdx = Math.min(totalWords - 1, Math.max(0, Math.floor(ratio * totalWords)));
+      }
 
       let wordCounter = 0;
-      let activeLineIdx = 0;
-      let activeWordInLine = 0;
-
       for (let lIdx = 0; lIdx < state.lineGroups.length; lIdx++) {
         const lineWords = state.lineGroups[lIdx];
         if (wordCounter + lineWords.length > currWordIdx) {
-          activeLineIdx = lIdx;
-          activeWordInLine = currWordIdx - wordCounter;
-          break;
+          return [lIdx, currWordIdx - wordCounter];
         }
         wordCounter += lineWords.length;
-        if (lIdx === state.lineGroups.length - 1) {
-          activeLineIdx = lIdx;
-          activeWordInLine = lineWords.length - 1;
+      }
+      const lastIdx = state.lineGroups.length - 1;
+      return [lastIdx, state.lineGroups[lastIdx].length - 1];
+    }
+
+    function buildLineElement(lineWords, lineIdx, activeLineIdx, activeWordInLine) {
+      const div = document.createElement("div");
+      div.className = "caption-line";
+      if (lineIdx < activeLineIdx) {
+        div.classList.add("word-past");
+        div.textContent = lineWords.join(" ");
+      } else if (lineIdx > activeLineIdx) {
+        div.classList.add("word-future");
+        div.textContent = lineWords.join(" ");
+      } else {
+        lineWords.forEach((w, wIdx) => {
+          const span = document.createElement("span");
+          if (wIdx < activeWordInLine) span.className = "word-past";
+          else if (wIdx === activeWordInLine) span.className = `word-active-${state.emphasis}`;
+          else span.className = "word-future";
+          span.textContent = w;
+          div.appendChild(span);
+          if (wIdx < lineWords.length - 1) div.appendChild(document.createTextNode(" "));
+        });
+      }
+      return div;
+    }
+
+    function formatMMSS(sec) {
+      if (!Number.isFinite(sec) || sec < 0) return "00:00";
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    function renderTeleprompterFrame(elapsed, duration) {
+      captionApertureEl.innerHTML = "";
+
+      if (!state.words.length || !state.lineGroups.length) {
+        const empty = document.createElement("div");
+        empty.className = "caption-line word-future";
+        empty.textContent = "Ready.";
+        captionApertureEl.appendChild(empty);
+        return;
+      }
+
+      const [activeLineIdx, activeWordInLine] = findActiveWordPosition(elapsed, duration);
+
+      if (state.viewMode === "scroll") {
+        let activeEl = null;
+        state.lineGroups.forEach((lineWords, idx) => {
+          const el = buildLineElement(lineWords, idx, activeLineIdx, activeWordInLine);
+          if (idx === activeLineIdx) activeEl = el;
+          captionApertureEl.appendChild(el);
+        });
+        if (activeEl) {
+          const topPos = activeEl.offsetTop - captionApertureEl.offsetTop - (captionApertureEl.clientHeight / 2) + (activeEl.clientHeight / 2);
+          captionApertureEl.scrollTop = Math.max(0, topPos);
+        }
+      } else {
+        const startLineIdx = activeLineIdx - 1;
+        for (let slot = 0; slot < 3; slot++) {
+          const targetIdx = startLineIdx + slot;
+          if (targetIdx < 0 || targetIdx >= state.lineGroups.length) {
+            const blank = document.createElement("div");
+            blank.className = "caption-line";
+            captionApertureEl.appendChild(blank);
+          } else {
+            captionApertureEl.appendChild(
+              buildLineElement(state.lineGroups[targetIdx], targetIdx, activeLineIdx, activeWordInLine)
+            );
+          }
         }
       }
 
-      const startLineIdx = activeLineIdx - 1;
-      for (let slot = 0; slot < 3; slot++) {
-        const targetIdx = startLineIdx + slot;
-        const lineEl = capLines[slot];
-        if (targetIdx < 0 || targetIdx >= state.lineGroups.length) {
-          lineEl.textContent = "";
-          continue;
-        }
-        const lineWords = state.lineGroups[targetIdx];
-        if (targetIdx < activeLineIdx) {
-          lineEl.className = "caption-line word-past";
-          lineEl.textContent = lineWords.join(" ");
-        } else if (targetIdx > activeLineIdx) {
-          lineEl.className = "caption-line word-future";
-          lineEl.textContent = lineWords.join(" ");
-        } else {
-          lineWords.forEach((w, wIdx) => {
-            const span = document.createElement("span");
-            if (wIdx < activeWordInLine) {
-              span.className = "word-past";
-            } else if (wIdx === activeWordInLine) {
-              span.className = `word-active-${state.emphasis}`;
-            } else {
-              span.className = "word-future";
-            }
-            span.textContent = w;
-            lineEl.appendChild(span);
-            if (wIdx < lineWords.length - 1) {
-              lineEl.appendChild(document.createTextNode(" "));
-            }
-          });
-        }
-      }
-
+      const ratio = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 0;
       const pct = Math.round(ratio * 100);
       hudProgressFillEl.style.width = `${pct}%`;
       hudPctEl.textContent = `${pct}%`;
-      hudTimeEl.textContent = `${formatMMSS(elapsed)}/${formatMMSS(duration)}`;
-    }
-
-    function minMax(val, min, max) {
-      return Math.min(max, Math.max(min, val));
+      hudTimeEl.textContent = `${formatMMSS(elapsed)} / ${formatMMSS(duration)}`;
     }
 
     audioPlayerEl.addEventListener("play", () => {
       hudBeaconEl.textContent = "● PLAY";
-      hudBeaconEl.className = "status-beacon beacon-play";
+      hudBeaconEl.className = "beacon-play";
+      playPauseBtnEl.textContent = "⏸ Pause";
       requestAnimationFrame(stepTeleprompter);
     });
 
     audioPlayerEl.addEventListener("pause", () => {
       hudBeaconEl.textContent = "○ IDLE";
-      hudBeaconEl.className = "status-beacon beacon-idle";
+      hudBeaconEl.className = "beacon-idle";
+      playPauseBtnEl.textContent = "▶ Play";
     });
 
     audioPlayerEl.addEventListener("ended", () => {
       hudBeaconEl.textContent = "● DONE";
-      hudBeaconEl.className = "status-beacon beacon-play";
+      hudBeaconEl.className = "beacon-play";
+      playPauseBtnEl.textContent = "▶ Play";
       renderTeleprompterFrame(audioPlayerEl.duration || 1, audioPlayerEl.duration || 1);
     });
 
@@ -1026,28 +1339,8 @@
 
     playPauseBtnEl.addEventListener("click", () => {
       if (!audioPlayerEl.src) return;
-      if (audioPlayerEl.paused) {
-        audioPlayerEl.play();
-      } else {
-        audioPlayerEl.pause();
-      }
-    });
-
-    emphasisSelectEl.addEventListener("change", () => {
-      state.emphasis = emphasisSelectEl.value;
-      renderTeleprompterFrame(audioPlayerEl.currentTime || 0, audioPlayerEl.duration || 1);
-    });
-
-    document.addEventListener("keydown", (e) => {
-      if (e.isComposing) return;
-      const tag = (e.target?.tagName || "").toLowerCase();
-      if (e.code === "Space" && tag !== "textarea" && tag !== "input" && tag !== "select" && tag !== "button") {
-        if (audioPlayerEl.src) {
-          e.preventDefault();
-          if (audioPlayerEl.paused) audioPlayerEl.play();
-          else audioPlayerEl.pause();
-        }
-      }
+      if (audioPlayerEl.paused) audioPlayerEl.play();
+      else audioPlayerEl.pause();
     });
 
     textInputEl.addEventListener("keydown", (e) => {
@@ -1058,6 +1351,7 @@
       }
     });
 
+    /* ── SSE Execution & Terminal Stream ────────────────────────────── */
     function appendLogLine(text, cls = "") {
       const div = document.createElement("div");
       div.className = `log-line ${cls}`.trim();
@@ -1073,6 +1367,7 @@
       if (state.isRunning) return;
       state.isRunning = true;
       submitBtnEl.disabled = true;
+      terminalStatusBadgeEl.textContent = "running...";
       activeCrLineEl = null;
 
       try {
@@ -1084,6 +1379,7 @@
 
         if (!resp.ok || !resp.body) {
           appendLogLine(`HTTP Error: ${resp.status}`, "done-err");
+          terminalStatusBadgeEl.textContent = "error";
           return;
         }
 
@@ -1114,11 +1410,8 @@
               appendLogLine(`$ ${data.command}`, "cmd");
             } else if (evType === "output") {
               if (data.is_cr) {
-                if (!activeCrLineEl) {
-                  activeCrLineEl = appendLogLine(data.line, "cr");
-                } else {
-                  activeCrLineEl.textContent = data.line;
-                }
+                if (!activeCrLineEl) activeCrLineEl = appendLogLine(data.line, "cr");
+                else activeCrLineEl.textContent = data.line;
               } else {
                 activeCrLineEl = null;
                 appendLogLine(data.line);
@@ -1126,30 +1419,35 @@
             } else if (evType === "done") {
               activeCrLineEl = null;
               if (data.exit_code === 0) {
-                appendLogLine(`✓ Process exited with code 0`, "done-ok");
+                terminalStatusBadgeEl.textContent = "exit 0";
+                appendLogLine("✓ exit 0", "done-ok");
                 if (data.output) {
                   setTeleprompterTranscript(
                     data.output.transcript || textInputEl.value,
-                    data.output.voice
+                    data.output.voice,
+                    data.output.timing
                   );
                   audioPlayerEl.src = data.output.url;
                   audioPlayerEl.play().catch(() => {});
                   await loadOutputs();
                 }
               } else {
-                appendLogLine(`✗ Process exited with code ${data.exit_code}`, "done-err");
+                terminalStatusBadgeEl.textContent = `exit ${data.exit_code}`;
+                appendLogLine(`✗ exit ${data.exit_code}`, "done-err");
               }
             }
           }
         }
       } catch (err) {
-        appendLogLine(`Stream Error: ${err.message}`, "done-err");
+        terminalStatusBadgeEl.textContent = "error";
+        appendLogLine(`Error: ${err.message}`, "done-err");
       } finally {
         state.isRunning = false;
         submitBtnEl.disabled = false;
       }
     }
 
+    /* ── Schema Introspection & Pulldown Population ─────────────────── */
     function populateVoicesForEngine(engineId) {
       if (!state.schema) return;
       voiceSelectEl.innerHTML = "";
@@ -1160,10 +1458,8 @@
       for (const p of available) {
         const opt = document.createElement("option");
         opt.value = p.id;
-        opt.textContent = `${p.glyph} ${p.name} — ${p.style} (${p.intent})`;
-        if (p.id === state.selectedVoice) {
-          opt.selected = true;
-        }
+        opt.textContent = `${p.glyph} ${p.name} — ${p.style}`;
+        if (p.id === state.selectedVoice) opt.selected = true;
         voiceSelectEl.appendChild(opt);
       }
 
@@ -1171,18 +1467,18 @@
         const riverOpt = available.find((p) => p.id === "river");
         voiceSelectEl.value = riverOpt ? "river" : available[0].id;
       }
-      updateVoiceHint();
+      updateVoiceMeta();
     }
 
-    function updateVoiceHint() {
+    function updateVoiceMeta() {
       if (!state.schema) return;
       const vId = voiceSelectEl.value;
       state.selectedVoice = vId;
       const p = state.schema.personas.find((item) => item.id === vId);
       if (p) {
         const rDetail = p.realization_details?.[state.selectedEngine];
-        const rText = rDetail?.voice || JSON.stringify(rDetail || {});
-        voiceIntentHintEl.textContent = `${p.glyph} ${p.name} (${state.selectedEngine} → ${rText}): ${p.intent}`;
+        const rVoice = rDetail?.voice || (rDetail?.blend ? "blend" : state.selectedEngine);
+        voiceMetaEl.textContent = `${state.selectedEngine} → ${rVoice}`;
         hudVoiceEl.textContent = p.name.toUpperCase();
         hudVoiceEl.style.color = p.hex_color;
       }
@@ -1194,7 +1490,7 @@
       state.schema = schema;
 
       document.getElementById("schema-badge").textContent =
-        `${schema.engines.length} engines · ${schema.personas.length} personas`;
+        `${schema.engines.length}e · ${schema.personas.length}v`;
 
       state.selectedEngine = schema.user_config?.engine || "kokoro";
       state.selectedVoice = schema.user_config?.persona || "river";
@@ -1202,69 +1498,79 @@
         state.emphasis = schema.user_config.emphasis;
         emphasisSelectEl.value = state.emphasis;
       }
+      if (schema.user_config?.view) {
+        state.viewMode = schema.user_config.view;
+        viewSelectEl.value = state.viewMode;
+        captionApertureEl.className = `caption-viewport mode-${state.viewMode}`;
+      }
+      updateOptionsSummary();
 
-      engineRadiosEl.innerHTML = "";
+      engineSelectEl.innerHTML = "";
       for (const eng of schema.engines) {
-        const label = document.createElement("label");
-        label.className = "choice-pill";
-        label.htmlFor = `eng-${eng.id}`;
-
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.id = `eng-${eng.id}`;
-        radio.name = "engine";
-        radio.value = eng.id;
-        if (eng.id === state.selectedEngine) radio.checked = true;
-
-        radio.addEventListener("change", () => {
-          state.selectedEngine = eng.id;
-          populateVoicesForEngine(eng.id);
-        });
-
-        const span = document.createElement("span");
-        span.textContent = `${eng.label} (${eng.id})`;
-        label.appendChild(radio);
-        label.appendChild(span);
-        engineRadiosEl.appendChild(label);
+        const opt = document.createElement("option");
+        opt.value = eng.id;
+        opt.textContent = `${eng.id} (${eng.label})`;
+        if (eng.id === state.selectedEngine) opt.selected = true;
+        engineSelectEl.appendChild(opt);
       }
 
       populateVoicesForEngine(state.selectedEngine);
 
-      audioTagsBarEl.innerHTML = "";
+      tagInsertSelectEl.innerHTML = '<option value="">+ [tag] ▾</option>';
       for (const tag of schema.help.audio_tags || []) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "btn-chip";
-        btn.textContent = tag;
-        btn.addEventListener("click", () => {
-          const start = textInputEl.selectionStart || 0;
-          const end = textInputEl.selectionEnd || 0;
-          const val = textInputEl.value;
-          textInputEl.value = `${val.slice(0, start)}${tag} ${val.slice(end)}`;
-          textInputEl.focus();
-        });
-        audioTagsBarEl.appendChild(btn);
+        const opt = document.createElement("option");
+        opt.value = tag;
+        opt.textContent = tag;
+        tagInsertSelectEl.appendChild(opt);
       }
 
       setTeleprompterTranscript(textInputEl.value, state.selectedVoice);
     }
 
-    voiceSelectEl.addEventListener("change", updateVoiceHint);
+    engineSelectEl.addEventListener("change", () => {
+      state.selectedEngine = engineSelectEl.value;
+      populateVoicesForEngine(state.selectedEngine);
+    });
+
+    voiceSelectEl.addEventListener("change", updateVoiceMeta);
+
+    tagInsertSelectEl.addEventListener("change", () => {
+      const tag = tagInsertSelectEl.value;
+      if (!tag) return;
+      const start = textInputEl.selectionStart || 0;
+      const end = textInputEl.selectionEnd || 0;
+      const val = textInputEl.value;
+      textInputEl.value = `${val.slice(0, start)}${tag} ${val.slice(end)}`;
+      tagInsertSelectEl.value = "";
+      textInputEl.focus();
+    });
+
+    cliRunnerSelectEl.addEventListener("change", () => {
+      const cmd = cliRunnerSelectEl.value;
+      if (!cmd) return;
+      cliRunnerSelectEl.value = "";
+      document.getElementById("terminal-details").open = true;
+      executeAndStream({
+        mode: "subcommand",
+        subcommand_args: cmd.split(/\s+/),
+      });
+    });
 
     speakFormEl.addEventListener("submit", (e) => {
       e.preventDefault();
       const formErr = document.getElementById("form-error");
+      formErr.style.display = "none";
       formErr.textContent = "";
 
       const useClipboard = document.getElementById("flag-clipboard").checked;
       const textVal = textInputEl.value.trim();
       if (!useClipboard && !textVal) {
-        formErr.textContent = "Please enter prose text or enable Read Clipboard (-c).";
+        formErr.textContent = "Enter text or enable -c Clip.";
+        formErr.style.display = "block";
         textInputEl.focus();
         return;
       }
 
-      const targetEl = document.querySelector('input[name="playback_target"]:checked');
       executeAndStream({
         mode: "narrate",
         engine: state.selectedEngine,
@@ -1272,96 +1578,94 @@
         text: textVal,
         clipboard: useClipboard,
         raw: document.getElementById("flag-raw").checked,
-        playback_target: targetEl ? targetEl.value : "browser",
+        playback_target: targetSelectEl.value,
       });
     });
 
-    document.getElementById("quick-subcommands").addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-subcmd]");
-      if (!btn) return;
-      const subArgs = btn.dataset.subcmd.split(/\s+/);
-      executeAndStream({
-        mode: "subcommand",
-        subcommand_args: subArgs,
-      });
-    });
-
-    document.getElementById("clear-log-btn").addEventListener("click", () => {
+    document.getElementById("clear-log-btn").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       terminalLogEl.innerHTML = "";
+      terminalStatusBadgeEl.textContent = "cleared";
     });
 
     async function loadOutputs() {
       const resp = await fetch("/api/outputs");
       const data = await resp.json();
       outputsListEl.innerHTML = "";
+      const list = data.outputs || [];
+      filesCountBadgeEl.textContent = `${list.length} wav`;
 
-      if (!data.outputs || data.outputs.length === 0) {
+      if (list.length === 0) {
         const empty = document.createElement("div");
-        empty.className = "hint";
-        empty.textContent = "No .wav artifacts generated yet. Click 'Synthesize Speech' to create one.";
+        empty.className = "file-sub";
+        empty.textContent = "No saved .wav files yet.";
         outputsListEl.appendChild(empty);
         return;
       }
 
-      for (const item of data.outputs) {
-        const card = document.createElement("div");
-        card.className = "output-card";
+      for (const item of list) {
+        const row = document.createElement("div");
+        row.className = "file-row";
 
-        const header = document.createElement("div");
-        header.className = "output-card-header";
+        const info = document.createElement("div");
+        info.className = "file-info";
 
-        const titleSpan = document.createElement("span");
-        titleSpan.style.color = "var(--text-bright)";
-        titleSpan.textContent = `${item.filename} (${item.duration_seconds}s · ${(item.size_bytes / 1024).toFixed(1)} KB)`;
+        const title = document.createElement("div");
+        title.className = "file-title";
+        title.textContent = `${item.voice ? item.voice.toUpperCase() + " · " : ""}${item.duration_seconds}s · ${item.filename}`;
 
-        const metaSpan = document.createElement("span");
-        metaSpan.className = "hint";
-        metaSpan.textContent = `${item.voice ? item.voice.toUpperCase() + " · " : ""}${item.created_at}`;
+        const sub = document.createElement("div");
+        sub.className = "file-sub";
+        sub.textContent = item.transcript || item.created_at;
 
-        header.appendChild(titleSpan);
-        header.appendChild(metaSpan);
-        card.appendChild(header);
-
-        if (item.transcript) {
-          const tr = document.createElement("div");
-          tr.className = "output-transcript";
-          tr.textContent = item.transcript;
-          card.appendChild(tr);
-        }
+        info.appendChild(title);
+        info.appendChild(sub);
 
         const actions = document.createElement("div");
-        actions.className = "output-actions";
+        actions.className = "file-actions";
 
-        const loadBtn = document.createElement("button");
-        loadBtn.type = "button";
-        loadBtn.className = "btn-chip";
-        loadBtn.textContent = "▶ Load in Teleprompter";
-        loadBtn.addEventListener("click", () => {
+        const playBtn = document.createElement("button");
+        playBtn.type = "button";
+        playBtn.className = "btn-mini";
+        playBtn.style.minHeight = "32px";
+        playBtn.style.borderColor = "var(--c6-files)";
+        playBtn.textContent = "▶";
+        playBtn.title = "Play in Player";
+        playBtn.addEventListener("click", () => {
           if (item.transcript) {
             textInputEl.value = item.transcript;
-            setTeleprompterTranscript(item.transcript, item.voice || state.selectedVoice);
           }
+          setTeleprompterTranscript(
+            item.transcript || textInputEl.value,
+            item.voice || state.selectedVoice,
+            item.timing
+          );
           audioPlayerEl.src = item.url;
           audioPlayerEl.play();
         });
 
-        const dlLink = document.createElement("a");
-        dlLink.href = item.url;
-        dlLink.download = item.filename;
-        dlLink.style.color = "var(--text-soft)";
-        dlLink.style.fontSize = "0.82rem";
-        dlLink.style.fontFamily = "var(--font-mono)";
-        dlLink.textContent = "⬇ Download WAV";
+        const dl = document.createElement("a");
+        dl.href = item.url;
+        dl.download = item.filename;
+        dl.className = "link-dl";
+        dl.textContent = "⬇";
+        dl.title = "Download WAV";
 
-        actions.appendChild(loadBtn);
-        actions.appendChild(dlLink);
-        card.appendChild(actions);
+        actions.appendChild(playBtn);
+        actions.appendChild(dl);
 
-        outputsListEl.appendChild(card);
+        row.appendChild(info);
+        row.appendChild(actions);
+        outputsListEl.appendChild(row);
       }
     }
 
-    document.getElementById("refresh-outputs-btn").addEventListener("click", loadOutputs);
+    document.getElementById("refresh-outputs-btn").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      loadOutputs();
+    });
 
     loadSchema();
     loadOutputs();
