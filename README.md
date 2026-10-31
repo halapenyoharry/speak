@@ -230,40 +230,55 @@ Skip step 1 with `-r` if your text is already tagged or you want the model's def
 
 `speak` provides real-time visual feedback and an interactive sci-fi HUD in the terminal:
 
-### 1. Live Multi-Stage Synthesis Sweep
-While audio is preparing, an animated cyber-sweep reports live elapsed deciseconds across the pipeline phases:
+### 1. Live Synthesis Indicator
+While audio is preparing, a compact, non-wrapping progress sweep reports live word count and elapsed deciseconds:
 ```
-  ⚙ SYNTHESIZING [▰▰▱▱▱▱▱▱] phonemization & acoustic modeling (0.4s)...
-  ⚙ SYNTHESIZING [▱▱▰▰▱▱▱▱] neural token generation (1.2s)...
-  ⚙ SYNTHESIZING [▱▱▱▱▱▰▰▱] waveform synthesis & rendering (2.1s)...
+  ⚙ SYNTHESIZING [▱▱▰▰▱▱▱▱] 482 words (0.8s)
 ```
 
 ### 2. Audio Telemetry & Closed Captioning
 During playback, `speak` renders a borderless, adaptive teleprompter that auto-scales to any terminal width (including thin split panes) with zero scrollback leak:
 
 ```
-  VOICE: RIVER
-
   All systems nominal, captain.
   Visual telemetry is online and orbit is established.
   Primary sensors are holding at maximum efficiency.
 
-  ● TALK   [████████░░]  [━━━━━━━━━╸──────]  53% 01:23 / 02:35
+  RIVER  ● PLAY [████████░░] [━━━━━━━━━╸──────] 53% 01:23 / 02:35
 ```
 
 * **Borderless & Window-Adaptive:** No rigid box frames or wrapping sidebars; scales cleanly to narrow windows and split panes.
-* **Vocal Rhythm Beacon:** `○ IDLE` during pauses, `● TALK` (solid green) on normal speech, `● ACTIVE` (bright green) on loud vocal stress points.
+* **Colored Voice Telemetry Badge:** Displays the active voice name in its deterministic 256-color badge right before `● PLAY` on the bottom status line.
+* **Steady Playback Beacon:** `● PLAY` stays steady throughout speech without distracting word-to-word state flickering, returning to `○ IDLE` only on long silence (`> 600ms`).
 * **Signal VU Meter:** Acoustic amplitude bar reflecting real decibel volume in 50ms time slices.
-* **Progress Track:** Determinate progress bar showing playback position against total audio duration.
+* **Progress Track:** Determinate progress bar showing percentage, elapsed time, and total audio duration.
+* **Configurable Active Word Emphasis:** Default active word styling is bold electric cyan (`emphasis=bold`). Customize via:
+  ```bash
+  speak set emphasis bold        # Bold only (default)
+  speak set emphasis underline   # Underline only
+  speak set emphasis both        # Bold + underline
+  speak set emphasis inverse     # High-contrast inverted pill
+  ```
 * **Closed Captioning / Lyric Scrolling:** 1 to 8 lines of text with vertical breathing room (default: `3`). Centered on the active line.
   * `-l, --lines N`: Set visible caption lines (1 to 8, default: `3`).
   * `--highlight word | line`: Choose between word-by-word karaoke style (default) or line-by-line illumination.
   * `--lead MS`: Caption anticipation lead time in milliseconds before speech (default: `65`).
-  * **Prosodic Pause-Aligned Sync:** Lines break at natural punctuation and breath pauses (`, . ! ? ; —`) so audio pauses coincide with line breaks rather than falling mid-line.
-  * **Word-Anchored Phonetic Timing:** Estimates syllable counts and punctuation pauses per word, calibrated to audio speech onset to eliminate cumulative drift.
-  * **Monochromatic Cyan Gradient:** Single hue only; the spoken line is electric bold cyan, stepping down in pure cyan luminance (84%, 67%, 51%, 37%) so visual attention is never distracted by conflicting colors.
-  * **Beacon Hysteresis & Smoothing:** 350ms hold window prevents rapid flickering to `IDLE` between spoken words.
+  * **Monochromatic Cyan Gradient:** Single hue only; the spoken line is electric cyan, stepping down in pure cyan luminance (84%, 67%, 51%, 37%) so visual attention is never distracted by conflicting colors.
 * **Terminal Tab Title:** Updates the IDE terminal tab title via OSC (`VOICE: <VOICE>`) and clears on completion.
+
+## Non-Invasive Web Front-End Sidecar (`web_ui.py`)
+
+`speak` includes a self-contained, zero-build 2-file Web UI sidecar (`web_ui.py` + `static/index.html`) that wraps the CLI without modifying a single line of CLI logic:
+
+```bash
+python3 web_ui.py
+# Open http://127.0.0.1:8420
+```
+
+- **Introspection (`GET /api/schema`):** Parses `./speak --help`, `voices.yaml`, `engines.yaml`, and `~/.config/speak/config` in read-only mode to dynamically populate subcommands, flags, engines, and 30+ voices.
+- **Live SSE Execution (`POST /api/run`):** Spawns `./speak` via `asyncio.create_subprocess_exec` (never `shell=True`) and streams real-time stdout/stderr telemetry and ANSI status updates to the browser over Server-Sent Events (`text/event-stream`).
+- **Artifact & Output Browser (`GET /api/outputs`):** Lists and streams generated `.wav` artifacts from `outputs/` and the workspace with embedded HTML5 audio players.
+- **Theme Switcher:** Toggle instantly between **◇ Lothal Astromech** (warm obsidian & cyan HUD) and **🕹️ 1984 Vector Arcade** (CRT phosphor scanlines, neon magenta/cyan vector borders, and arcade high-score styling).
 
 ## Platform support
 

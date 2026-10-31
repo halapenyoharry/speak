@@ -1,3 +1,6 @@
 *.wav
 *.pcm
 .DS_Store
+__pycache__/
+scratch/
+outputs/
