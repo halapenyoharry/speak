@@ -1,0 +1,2370 @@
+{
+  "metadata": {
+    "format": "normalized-dyadic",
+    "flavor": "dyadic-projection-from-hypergraph",
+    "i2t:relation_to_canonical": "dyadic-projection",
+    "originalCounts": {
+      "nodes": 81,
+      "edges": 44,
+      "incidences": 177
+    },
+    "source-metadata": {
+      "topothink-version": "0.1",
+      "format": "hypergraph",
+      "description": "Topology of the speak project \u2014 a CLI tool that adds narration intelligence to text-to-speech. Diagrams whole-project structure (engines, voices, models, services, tools, artifacts) and recent trajectory (commits introducing the Chirp 3 HD engine and the offline Kokoro engine). N-ary state_change edges are preserved as single edges with role incidences \u2014 synthesize is one event with engine/model/voice/output, not a chain of dyadic links.",
+      "source": "/Users/harold/Projects/speak @ 1a6c901 + uncommitted (kokoro integration WIP)",
+      "extractor": "claude (claude-opus-4-7), manual extraction from codebase + git history",
+      "extracted-on": "2026-05-26",
+      "anti-reification-discipline": "No node is created for: TTS Pipeline, Engine Selection, Optimization Step, Voice Mapping, Synthesis Process, Audio Generation Process. Each of those is an n-ary edge between persistent things, not a thing. Concepts that ARE reified (narration-intelligence, audio-tags-vocabulary) appear as entities because the README and source code reference them by name as addressable things, per the i2t reification rule."
+    }
+  },
+  "nodes": [
+    {
+      "id": "project:speak",
+      "kind": "node",
+      "attrs": {
+        "label": "speak (project root)",
+        "i2t:kind": "artifact",
+        "path": "/Users/harold/Projects/speak",
+        "github": "https://github.com/haroldyoung/speak"
+      },
+      "label": "speak (project root)"
+    },
+    {
+      "id": "artifact:speak-script",
+      "kind": "node",
+      "attrs": {
+        "label": "speak (bash script)",
+        "i2t:kind": "artifact",
+        "kind": "cli",
+        "language": "bash",
+        "lines": 939,
+        "role": "main CLI entry point"
+      },
+      "label": "speak (bash script)"
+    },
+    {
+      "id": "artifact:kokoro_tts_py",
+      "kind": "node",
+      "attrs": {
+        "label": "kokoro_tts.py",
+        "i2t:kind": "artifact",
+        "kind": "helper-script",
+        "language": "python",
+        "lines": 167,
+        "status": "uncommitted-as-of-1a6c901"
+      },
+      "label": "kokoro_tts.py"
+    },
+    {
+      "id": "artifact:readme",
+      "kind": "node",
+      "attrs": {
+        "label": "README.md",
+        "i2t:kind": "artifact"
+      },
+      "label": "README.md"
+    },
+    {
+      "id": "artifact:license",
+      "kind": "node",
+      "attrs": {
+        "label": "LICENSE",
+        "i2t:kind": "artifact"
+      },
+      "label": "LICENSE"
+    },
+    {
+      "id": "artifact:config-file",
+      "kind": "node",
+      "attrs": {
+        "label": "~/.config/speak/config",
+        "i2t:kind": "artifact",
+        "kind": "user-config",
+        "keys": [
+          "voice",
+          "tts_model",
+          "optimize_model",
+          "use_gcloud"
+        ]
+      },
+      "label": "~/.config/speak/config"
+    },
+    {
+      "id": "artifact:research-dir",
+      "kind": "node",
+      "attrs": {
+        "label": "research/",
+        "i2t:kind": "artifact",
+        "kind": "directory",
+        "role": "narration strategy notes / Compass artifact"
+      },
+      "label": "research/"
+    },
+    {
+      "id": "artifact:scratch-dir",
+      "kind": "node",
+      "attrs": {
+        "label": "scratch/",
+        "i2t:kind": "artifact",
+        "kind": "directory",
+        "status": "untracked",
+        "role": "voice blending experiments"
+      },
+      "label": "scratch/"
+    },
+    {
+      "id": "artifact:wrangler-dir",
+      "kind": "node",
+      "attrs": {
+        "label": ".wrangler/",
+        "i2t:kind": "artifact",
+        "kind": "directory",
+        "status": "untracked",
+        "role": "Cloudflare Workers tooling cache"
+      },
+      "label": ".wrangler/"
+    },
+    {
+      "id": "artifact:test-wavs",
+      "kind": "node",
+      "attrs": {
+        "label": "test_*.wav (10 files)",
+        "i2t:kind": "artifact",
+        "kind": "manual-test-recordings"
+      },
+      "label": "test_*.wav (10 files)"
+    },
+    {
+      "id": "engine:gemini-tts",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini Native TTS",
+        "i2t:kind": "engine",
+        "vendor": "Google",
+        "deployment": "cloud-api",
+        "audio-format-out": "PCM s16le 24kHz mono",
+        "default": true
+      },
+      "label": "Gemini Native TTS"
+    },
+    {
+      "id": "engine:gcloud-chirp3-hd",
+      "kind": "node",
+      "attrs": {
+        "label": "Google Cloud Chirp 3 HD",
+        "i2t:kind": "engine",
+        "vendor": "Google Cloud",
+        "deployment": "cloud-api",
+        "audio-format-out": "LINEAR16",
+        "voice-prefix": "en-US-Chirp3-HD-",
+        "role": "premium stable TTS"
+      },
+      "label": "Google Cloud Chirp 3 HD"
+    },
+    {
+      "id": "engine:kokoro-local",
+      "kind": "node",
+      "attrs": {
+        "label": "Kokoro Local TTS",
+        "i2t:kind": "engine",
+        "vendor": "thewh1teagle/kokoro-onnx",
+        "deployment": "offline-local",
+        "audio-format-out": "WAV",
+        "role": "fully offline path; no API key needed"
+      },
+      "label": "Kokoro Local TTS"
+    },
+    {
+      "id": "model:gemini-3.1-flash-tts-preview",
+      "kind": "node",
+      "attrs": {
+        "label": "gemini-3.1-flash-tts-preview",
+        "i2t:kind": "model",
+        "used-by": "engine:gemini-tts",
+        "role": "default TTS model"
+      },
+      "label": "gemini-3.1-flash-tts-preview"
+    },
+    {
+      "id": "model:gemini-2.5-flash-preview-tts",
+      "kind": "node",
+      "attrs": {
+        "label": "gemini-2.5-flash-preview-tts",
+        "i2t:kind": "model",
+        "used-by": "engine:gemini-tts",
+        "role": "fast mode (--fast) TTS model"
+      },
+      "label": "gemini-2.5-flash-preview-tts"
+    },
+    {
+      "id": "model:gemini-2.5-flash",
+      "kind": "node",
+      "attrs": {
+        "label": "gemini-2.5-flash",
+        "i2t:kind": "model",
+        "role": "narration optimizer (LLM rewrites text with delivery tags)"
+      },
+      "label": "gemini-2.5-flash"
+    },
+    {
+      "id": "model:kokoro-v1.0-onnx",
+      "kind": "node",
+      "attrs": {
+        "label": "kokoro-v1.0.onnx + voices-v1.0.bin",
+        "i2t:kind": "model",
+        "deployment": "local-file",
+        "stored-at": "~/.config/speak/models/",
+        "source-url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+      },
+      "label": "kokoro-v1.0.onnx + voices-v1.0.bin"
+    },
+    {
+      "id": "service:gemini-api",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini API (generativelanguage.googleapis.com)",
+        "i2t:kind": "external-service",
+        "base-url": "https://generativelanguage.googleapis.com/v1beta/models"
+      },
+      "label": "Gemini API (generativelanguage.googleapis.com)"
+    },
+    {
+      "id": "service:gcloud-tts-api",
+      "kind": "node",
+      "attrs": {
+        "label": "Google Cloud Text-to-Speech API",
+        "i2t:kind": "external-service",
+        "endpoint": "https://texttospeech.googleapis.com/v1/text:synthesize"
+      },
+      "label": "Google Cloud Text-to-Speech API"
+    },
+    {
+      "id": "tool:ffmpeg",
+      "kind": "node",
+      "attrs": {
+        "label": "ffmpeg",
+        "i2t:kind": "external-tool",
+        "role": "PCM\u2192WAV conversion, multi-chunk concat"
+      },
+      "label": "ffmpeg"
+    },
+    {
+      "id": "tool:ffprobe",
+      "kind": "node",
+      "attrs": {
+        "label": "ffprobe",
+        "i2t:kind": "external-tool",
+        "role": "audio duration measurement"
+      },
+      "label": "ffprobe"
+    },
+    {
+      "id": "tool:ffplay",
+      "kind": "node",
+      "attrs": {
+        "label": "ffplay",
+        "i2t:kind": "external-tool",
+        "role": "playback with --show waveform/spectrogram"
+      },
+      "label": "ffplay"
+    },
+    {
+      "id": "tool:espeak-ng",
+      "kind": "node",
+      "attrs": {
+        "label": "espeak-ng",
+        "i2t:kind": "external-tool",
+        "role": "phoneme synthesis backend Kokoro depends on (macOS: brew install)"
+      },
+      "label": "espeak-ng"
+    },
+    {
+      "id": "tool:gcloud-cli",
+      "kind": "node",
+      "attrs": {
+        "label": "gcloud CLI",
+        "i2t:kind": "external-tool",
+        "role": "auth token + project resolution"
+      },
+      "label": "gcloud CLI"
+    },
+    {
+      "id": "tool:python3",
+      "kind": "node",
+      "attrs": {
+        "label": "python3",
+        "i2t:kind": "external-tool",
+        "role": "JSON parsing, text chunking, JSON output assembly"
+      },
+      "label": "python3"
+    },
+    {
+      "id": "tool:curl",
+      "kind": "node",
+      "attrs": {
+        "label": "curl",
+        "i2t:kind": "external-tool",
+        "role": "HTTP transport to all cloud APIs"
+      },
+      "label": "curl"
+    },
+    {
+      "id": "tool:clipboard",
+      "kind": "node",
+      "attrs": {
+        "label": "pbpaste / xclip / xsel / wl-paste",
+        "i2t:kind": "external-tool",
+        "role": "clipboard read for -c flag"
+      },
+      "label": "pbpaste / xclip / xsel / wl-paste"
+    },
+    {
+      "id": "tool:audio-player",
+      "kind": "node",
+      "attrs": {
+        "label": "afplay / paplay / aplay / mpv",
+        "i2t:kind": "external-tool",
+        "role": "fallback audio playback"
+      },
+      "label": "afplay / paplay / aplay / mpv"
+    },
+    {
+      "id": "auth:gemini-api-key",
+      "kind": "node",
+      "attrs": {
+        "label": "GEMINI_API_KEY env var",
+        "i2t:kind": "auth-method"
+      },
+      "label": "GEMINI_API_KEY env var"
+    },
+    {
+      "id": "auth:gcloud-oauth",
+      "kind": "node",
+      "attrs": {
+        "label": "gcloud OAuth (application-default)",
+        "i2t:kind": "auth-method",
+        "default-project-fallback": "g-drive-474022"
+      },
+      "label": "gcloud OAuth (application-default)"
+    },
+    {
+      "id": "auth:none",
+      "kind": "node",
+      "attrs": {
+        "label": "(no authentication required)",
+        "i2t:kind": "auth-method"
+      },
+      "label": "(no authentication required)"
+    },
+    {
+      "id": "concept:narration-intelligence",
+      "kind": "node",
+      "attrs": {
+        "label": "narration intelligence",
+        "i2t:kind": "concept",
+        "reification-justification": "the README explicitly uses this phrase as the tool's signature value-add: 'Gemini-powered text-to-speech with narration intelligence'"
+      },
+      "label": "narration intelligence"
+    },
+    {
+      "id": "concept:audio-tags-vocabulary",
+      "kind": "node",
+      "attrs": {
+        "label": "audio tags vocabulary",
+        "i2t:kind": "concept",
+        "members": [
+          "[whispers]",
+          "[excited]",
+          "[serious]",
+          "[warmly]",
+          "[slowly]",
+          "[laughs]",
+          "[sighs]",
+          "[pause]",
+          "[shouting]",
+          "[sarcastic]"
+        ],
+        "reification-justification": "the README defines this as a named entity (the AUDIO TAGS section in --help) used by both the optimizer's output and the user's raw input"
+      },
+      "label": "audio tags vocabulary"
+    },
+    {
+      "id": "exploration:cloudflare-workers",
+      "kind": "node",
+      "attrs": {
+        "label": "Cloudflare Workers deployment exploration",
+        "i2t:kind": "exploration",
+        "status": "untracked-WIP",
+        "evidence": ".wrangler/ cache present, no production integration yet"
+      },
+      "label": "Cloudflare Workers deployment exploration"
+    },
+    {
+      "id": "exploration:voice-blending",
+      "kind": "node",
+      "attrs": {
+        "label": "Kokoro voice-blend experimentation",
+        "i2t:kind": "exploration",
+        "status": "untracked-WIP",
+        "evidence": "scratch/kokoro_blend_30_70.wav, kokoro_blend_50_50.wav, kokoro_blend_70_30.wav, kokoro_pure_*.wav, f5_*.py (F5-TTS comparison)"
+      },
+      "label": "Kokoro voice-blend experimentation"
+    },
+    {
+      "id": "commit:dabe629",
+      "kind": "node",
+      "attrs": {
+        "label": "dabe629",
+        "i2t:kind": "commit",
+        "subject": "chore: save local state before implementing Cloud TTS Chirp 3 HD",
+        "dcterms:date": "pre-502bf30"
+      },
+      "label": "dabe629"
+    },
+    {
+      "id": "commit:502bf30",
+      "kind": "node",
+      "attrs": {
+        "label": "502bf30",
+        "i2t:kind": "commit",
+        "subject": "feat: Add Google Cloud Chirp 3 HD track with configuration support"
+      },
+      "label": "502bf30"
+    },
+    {
+      "id": "commit:1a6c901",
+      "kind": "node",
+      "attrs": {
+        "label": "1a6c901 (HEAD)",
+        "i2t:kind": "commit",
+        "subject": "refactor: Rename CLI option --cloud to --gcloud and configuration keys to use_gcloud",
+        "is-head": true
+      },
+      "label": "1a6c901 (HEAD)"
+    },
+    {
+      "id": "commit:uncommitted-kokoro",
+      "kind": "node",
+      "attrs": {
+        "label": "uncommitted: Kokoro integration",
+        "i2t:kind": "commit",
+        "subject": "Add -k/--kokoro engine path, kokoro_tts.py helper, voice blending scratch work",
+        "status": "working-tree-only"
+      },
+      "label": "uncommitted: Kokoro integration"
+    },
+    {
+      "id": "voice:zephyr",
+      "kind": "node",
+      "attrs": {
+        "label": "Zephyr",
+        "i2t:kind": "voice",
+        "style": "Bright",
+        "ansi-color": 36,
+        "glyph": "\u25c7"
+      },
+      "label": "Zephyr"
+    },
+    {
+      "id": "voice:puck",
+      "kind": "node",
+      "attrs": {
+        "label": "Puck",
+        "i2t:kind": "voice",
+        "style": "Upbeat",
+        "ansi-color": 33,
+        "glyph": "\u25c6",
+        "is-default": true
+      },
+      "label": "Puck"
+    },
+    {
+      "id": "voice:charon",
+      "kind": "node",
+      "attrs": {
+        "label": "Charon",
+        "i2t:kind": "voice",
+        "style": "Informative",
+        "ansi-color": 34,
+        "glyph": "\u25a3"
+      },
+      "label": "Charon"
+    },
+    {
+      "id": "voice:kore",
+      "kind": "node",
+      "attrs": {
+        "label": "Kore",
+        "i2t:kind": "voice",
+        "style": "Firm",
+        "ansi-color": 35,
+        "glyph": "\u25c8"
+      },
+      "label": "Kore"
+    },
+    {
+      "id": "voice:fenrir",
+      "kind": "node",
+      "attrs": {
+        "label": "Fenrir",
+        "i2t:kind": "voice",
+        "style": "Excitable",
+        "ansi-color": 31,
+        "glyph": "\u25b3"
+      },
+      "label": "Fenrir"
+    },
+    {
+      "id": "voice:leda",
+      "kind": "node",
+      "attrs": {
+        "label": "Leda",
+        "i2t:kind": "voice",
+        "style": "Youthful",
+        "ansi-color": 36,
+        "glyph": "\u25cb"
+      },
+      "label": "Leda"
+    },
+    {
+      "id": "voice:orus",
+      "kind": "node",
+      "attrs": {
+        "label": "Orus",
+        "i2t:kind": "voice",
+        "style": "Firm",
+        "ansi-color": 34,
+        "glyph": "\u25aa"
+      },
+      "label": "Orus"
+    },
+    {
+      "id": "voice:aoede",
+      "kind": "node",
+      "attrs": {
+        "label": "Aoede",
+        "i2t:kind": "voice",
+        "style": "Breezy",
+        "ansi-color": 32,
+        "glyph": "\u25ce"
+      },
+      "label": "Aoede"
+    },
+    {
+      "id": "voice:callirrhoe",
+      "kind": "node",
+      "attrs": {
+        "label": "Callirrhoe",
+        "i2t:kind": "voice",
+        "style": "Easy-going",
+        "ansi-color": 33,
+        "glyph": "\u25cc"
+      },
+      "label": "Callirrhoe"
+    },
+    {
+      "id": "voice:autonoe",
+      "kind": "node",
+      "attrs": {
+        "label": "Autonoe",
+        "i2t:kind": "voice",
+        "style": "Bright",
+        "ansi-color": 36,
+        "glyph": "\u25ca"
+      },
+      "label": "Autonoe"
+    },
+    {
+      "id": "voice:enceladus",
+      "kind": "node",
+      "attrs": {
+        "label": "Enceladus",
+        "i2t:kind": "voice",
+        "style": "Breathy",
+        "ansi-color": 35,
+        "glyph": "\u25e6"
+      },
+      "label": "Enceladus"
+    },
+    {
+      "id": "voice:iapetus",
+      "kind": "node",
+      "attrs": {
+        "label": "Iapetus",
+        "i2t:kind": "voice",
+        "style": "Clear",
+        "ansi-color": 34,
+        "glyph": "\u25ab"
+      },
+      "label": "Iapetus"
+    },
+    {
+      "id": "voice:umbriel",
+      "kind": "node",
+      "attrs": {
+        "label": "Umbriel",
+        "i2t:kind": "voice",
+        "style": "Easy-going",
+        "ansi-color": 32,
+        "glyph": "\u25cd"
+      },
+      "label": "Umbriel"
+    },
+    {
+      "id": "voice:algieba",
+      "kind": "node",
+      "attrs": {
+        "label": "Algieba",
+        "i2t:kind": "voice",
+        "style": "Smooth",
+        "ansi-color": 33,
+        "glyph": "\u25cf"
+      },
+      "label": "Algieba"
+    },
+    {
+      "id": "voice:despina",
+      "kind": "node",
+      "attrs": {
+        "label": "Despina",
+        "i2t:kind": "voice",
+        "style": "Smooth",
+        "ansi-color": 35,
+        "glyph": "\u25d0"
+      },
+      "label": "Despina"
+    },
+    {
+      "id": "voice:erinome",
+      "kind": "node",
+      "attrs": {
+        "label": "Erinome",
+        "i2t:kind": "voice",
+        "style": "Clear",
+        "ansi-color": 36,
+        "glyph": "\u25d1"
+      },
+      "label": "Erinome"
+    },
+    {
+      "id": "voice:algenib",
+      "kind": "node",
+      "attrs": {
+        "label": "Algenib",
+        "i2t:kind": "voice",
+        "style": "Gravelly",
+        "ansi-color": 31,
+        "glyph": "\u25b2"
+      },
+      "label": "Algenib"
+    },
+    {
+      "id": "voice:rasalgethi",
+      "kind": "node",
+      "attrs": {
+        "label": "Rasalgethi",
+        "i2t:kind": "voice",
+        "style": "Informative",
+        "ansi-color": 34,
+        "glyph": "\u25d2"
+      },
+      "label": "Rasalgethi"
+    },
+    {
+      "id": "voice:laomedeia",
+      "kind": "node",
+      "attrs": {
+        "label": "Laomedeia",
+        "i2t:kind": "voice",
+        "style": "Upbeat",
+        "ansi-color": 33,
+        "glyph": "\u25d3"
+      },
+      "label": "Laomedeia"
+    },
+    {
+      "id": "voice:achernar",
+      "kind": "node",
+      "attrs": {
+        "label": "Achernar",
+        "i2t:kind": "voice",
+        "style": "Soft",
+        "ansi-color": 35,
+        "glyph": "\u25d4"
+      },
+      "label": "Achernar"
+    },
+    {
+      "id": "voice:alnilam",
+      "kind": "node",
+      "attrs": {
+        "label": "Alnilam",
+        "i2t:kind": "voice",
+        "style": "Firm",
+        "ansi-color": 31,
+        "glyph": "\u25d5"
+      },
+      "label": "Alnilam"
+    },
+    {
+      "id": "voice:schedar",
+      "kind": "node",
+      "attrs": {
+        "label": "Schedar",
+        "i2t:kind": "voice",
+        "style": "Even",
+        "ansi-color": 34,
+        "glyph": "\u25d6"
+      },
+      "label": "Schedar"
+    },
+    {
+      "id": "voice:gacrux",
+      "kind": "node",
+      "attrs": {
+        "label": "Gacrux",
+        "i2t:kind": "voice",
+        "style": "Mature",
+        "ansi-color": 32,
+        "glyph": "\u25d7"
+      },
+      "label": "Gacrux"
+    },
+    {
+      "id": "voice:pulcherrima",
+      "kind": "node",
+      "attrs": {
+        "label": "Pulcherrima",
+        "i2t:kind": "voice",
+        "style": "Forward",
+        "ansi-color": 35,
+        "glyph": "\u25d8"
+      },
+      "label": "Pulcherrima"
+    },
+    {
+      "id": "voice:achird",
+      "kind": "node",
+      "attrs": {
+        "label": "Achird",
+        "i2t:kind": "voice",
+        "style": "Friendly",
+        "ansi-color": 33,
+        "glyph": "\u25d9"
+      },
+      "label": "Achird"
+    },
+    {
+      "id": "voice:zubenelgenubi",
+      "kind": "node",
+      "attrs": {
+        "label": "Zubenelgenubi",
+        "i2t:kind": "voice",
+        "style": "Casual",
+        "ansi-color": 32,
+        "glyph": "\u25da"
+      },
+      "label": "Zubenelgenubi"
+    },
+    {
+      "id": "voice:vindemiatrix",
+      "kind": "node",
+      "attrs": {
+        "label": "Vindemiatrix",
+        "i2t:kind": "voice",
+        "style": "Gentle",
+        "ansi-color": 35,
+        "glyph": "\u25db"
+      },
+      "label": "Vindemiatrix"
+    },
+    {
+      "id": "voice:sadachbia",
+      "kind": "node",
+      "attrs": {
+        "label": "Sadachbia",
+        "i2t:kind": "voice",
+        "style": "Lively",
+        "ansi-color": 33,
+        "glyph": "\u25dc"
+      },
+      "label": "Sadachbia"
+    },
+    {
+      "id": "voice:sadaltager",
+      "kind": "node",
+      "attrs": {
+        "label": "Sadaltager",
+        "i2t:kind": "voice",
+        "style": "Knowledgeable",
+        "ansi-color": 34,
+        "glyph": "\u25dd"
+      },
+      "label": "Sadaltager"
+    },
+    {
+      "id": "voice:sulafat",
+      "kind": "node",
+      "attrs": {
+        "label": "Sulafat",
+        "i2t:kind": "voice",
+        "style": "Warm",
+        "ansi-color": 31,
+        "glyph": "\u25de"
+      },
+      "label": "Sulafat"
+    },
+    {
+      "id": "kokoro-voice:af_heart",
+      "kind": "node",
+      "attrs": {
+        "label": "af_heart",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-us"
+      },
+      "label": "af_heart"
+    },
+    {
+      "id": "kokoro-voice:af_bella",
+      "kind": "node",
+      "attrs": {
+        "label": "af_bella",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-us"
+      },
+      "label": "af_bella"
+    },
+    {
+      "id": "kokoro-voice:af_nicole",
+      "kind": "node",
+      "attrs": {
+        "label": "af_nicole",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-us"
+      },
+      "label": "af_nicole"
+    },
+    {
+      "id": "kokoro-voice:af_sarah",
+      "kind": "node",
+      "attrs": {
+        "label": "af_sarah",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-us"
+      },
+      "label": "af_sarah"
+    },
+    {
+      "id": "kokoro-voice:af_sky",
+      "kind": "node",
+      "attrs": {
+        "label": "af_sky",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-us"
+      },
+      "label": "af_sky"
+    },
+    {
+      "id": "kokoro-voice:am_adam",
+      "kind": "node",
+      "attrs": {
+        "label": "am_adam",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-us"
+      },
+      "label": "am_adam"
+    },
+    {
+      "id": "kokoro-voice:am_michael",
+      "kind": "node",
+      "attrs": {
+        "label": "am_michael",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-us"
+      },
+      "label": "am_michael"
+    },
+    {
+      "id": "kokoro-voice:bf_emma",
+      "kind": "node",
+      "attrs": {
+        "label": "bf_emma",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-gb"
+      },
+      "label": "bf_emma"
+    },
+    {
+      "id": "kokoro-voice:bf_isabella",
+      "kind": "node",
+      "attrs": {
+        "label": "bf_isabella",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-gb"
+      },
+      "label": "bf_isabella"
+    },
+    {
+      "id": "kokoro-voice:bm_george",
+      "kind": "node",
+      "attrs": {
+        "label": "bm_george",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-gb"
+      },
+      "label": "bm_george"
+    },
+    {
+      "id": "kokoro-voice:bm_lewis",
+      "kind": "node",
+      "attrs": {
+        "label": "bm_lewis",
+        "i2t:kind": "kokoro-native-voice",
+        "language": "en-gb"
+      },
+      "label": "bm_lewis"
+    },
+    {
+      "id": "blend:adam-michael-50-50",
+      "kind": "node",
+      "attrs": {
+        "label": "adam-michael (0.5/0.5 blend)",
+        "i2t:kind": "kokoro-voice-blend",
+        "components": {
+          "am_adam": 0.5,
+          "am_michael": 0.5
+        },
+        "role": "the default Kokoro voice + the Puck-mapping target"
+      },
+      "label": "adam-michael (0.5/0.5 blend)"
+    },
+    {
+      "id": "c:project-contains",
+      "kind": "hyperedge",
+      "label": "contains",
+      "attrs": {
+        "i2t:predicate": "contains",
+        "i2t:edge_category": "containment",
+        "label": "project root contains its artifacts"
+      }
+    },
+    {
+      "id": "c:script-embeds-optimizer-prompt",
+      "kind": "hyperedge",
+      "label": "embeds",
+      "attrs": {
+        "i2t:predicate": "embeds",
+        "i2t:edge_category": "containment",
+        "label": "speak script embeds the narration-director optimizer prompt"
+      }
+    },
+    {
+      "id": "c:gemini-engine-supports-voices",
+      "kind": "hyperedge",
+      "label": "supports-voices",
+      "attrs": {
+        "i2t:predicate": "supports-voices",
+        "i2t:edge_category": "containment",
+        "label": "engine:gemini-tts addresses these 30 prebuiltVoice names"
+      }
+    },
+    {
+      "id": "c:kokoro-engine-supports-voices",
+      "kind": "hyperedge",
+      "label": "supports-voices",
+      "attrs": {
+        "i2t:predicate": "supports-voices",
+        "i2t:edge_category": "containment",
+        "label": "engine:kokoro-local natively addresses its 11 voices and the adam-michael blend"
+      }
+    },
+    {
+      "id": "sc:optimize",
+      "kind": "hyperedge",
+      "label": "optimize-narration",
+      "attrs": {
+        "i2t:predicate": "optimize-narration",
+        "i2t:edge_category": "state_change",
+        "label": "raw text \u2192 optimized transcript via Gemini 2.5 Flash acting as narration director. Skipped when --raw."
+      }
+    },
+    {
+      "id": "sc:synthesize-gemini",
+      "kind": "hyperedge",
+      "label": "synthesize-audio",
+      "attrs": {
+        "i2t:predicate": "synthesize-audio",
+        "i2t:edge_category": "state_change",
+        "label": "optimized transcript \u2192 PCM/WAV via Gemini native TTS. One n-ary event with engine + model + voice + output."
+      }
+    },
+    {
+      "id": "sc:synthesize-chirp3",
+      "kind": "hyperedge",
+      "label": "synthesize-audio",
+      "attrs": {
+        "i2t:predicate": "synthesize-audio",
+        "i2t:edge_category": "state_change",
+        "label": "optimized transcript \u2192 LINEAR16 WAV via Google Cloud Chirp 3 HD. One n-ary event with engine + voice + output."
+      }
+    },
+    {
+      "id": "sc:synthesize-kokoro",
+      "kind": "hyperedge",
+      "label": "synthesize-audio",
+      "attrs": {
+        "i2t:predicate": "synthesize-audio",
+        "i2t:edge_category": "state_change",
+        "label": "optimized transcript \u2192 WAV via local Kokoro ONNX. One n-ary event. No external service incidence \u2014 this is the offline path."
+      }
+    },
+    {
+      "id": "i:speak-calls-gemini-api",
+      "kind": "hyperedge",
+      "label": "http-call",
+      "attrs": {
+        "i2t:predicate": "http-call",
+        "i2t:edge_category": "interactivity",
+        "label": "speak script \u2194 Gemini API (curl) for both optimize and synthesize-gemini"
+      }
+    },
+    {
+      "id": "i:speak-calls-gcloud-tts",
+      "kind": "hyperedge",
+      "label": "http-call",
+      "attrs": {
+        "i2t:predicate": "http-call",
+        "i2t:edge_category": "interactivity",
+        "label": "speak script \u2194 Google Cloud TTS API (curl) for synthesize-chirp3"
+      }
+    },
+    {
+      "id": "i:speak-invokes-kokoro-helper",
+      "kind": "hyperedge",
+      "label": "subprocess-invoke",
+      "attrs": {
+        "i2t:predicate": "subprocess-invoke",
+        "i2t:edge_category": "interactivity",
+        "label": "speak script \u2194 kokoro_tts.py (python3 subprocess) for synthesize-kokoro"
+      }
+    },
+    {
+      "id": "i:remaining-voices-fallback",
+      "kind": "hyperedge",
+      "label": "maps-to-default",
+      "attrs": {
+        "i2t:predicate": "maps-to-default",
+        "i2t:edge_category": "interactivity",
+        "label": "21 unmapped Gemini voices fall through to the adam-michael blend under -k"
+      }
+    },
+    {
+      "id": "i:blend-composition",
+      "kind": "hyperedge",
+      "label": "blends",
+      "attrs": {
+        "i2t:predicate": "blends",
+        "i2t:edge_category": "interactivity",
+        "label": "adam-michael is 0.5\u00b7am_adam + 0.5\u00b7am_michael style vectors"
+      }
+    },
+    {
+      "id": "r:commit-chain-precedes",
+      "kind": "hyperedge",
+      "label": "precedes",
+      "attrs": {
+        "i2t:predicate": "precedes",
+        "i2t:edge_category": "reference",
+        "label": "linear commit trajectory: dabe629 \u2192 502bf30 \u2192 1a6c901 \u2192 uncommitted-kokoro"
+      }
+    },
+    {
+      "id": "r:uncommitted-modifies",
+      "kind": "hyperedge",
+      "label": "modifies",
+      "attrs": {
+        "i2t:predicate": "modifies",
+        "i2t:edge_category": "reference",
+        "label": "uncommitted work touches speak (modified), kokoro_tts.py (created), scratch/ (created), .wrangler/ (created)"
+      }
+    },
+    {
+      "id": "r:exploration-blending-produces",
+      "kind": "hyperedge",
+      "label": "produces-artifact",
+      "attrs": {
+        "i2t:predicate": "produces-artifact",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "i:speak-plays-output",
+      "kind": "hyperedge",
+      "label": "plays-audio",
+      "attrs": {
+        "i2t:predicate": "plays-audio",
+        "i2t:edge_category": "interactivity",
+        "label": "speak plays the final WAV \u2014 afplay/paplay/aplay/mpv by default; ffplay when --show wave|spec is set"
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": "c:project-contains",
+      "target": "project:speak",
+      "directed": true,
+      "role": "container",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:speak-script",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:kokoro_tts_py",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:readme",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:license",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:research-dir",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:scratch-dir",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:wrangler-dir",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:test-wavs",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "artifact:speak-script",
+      "target": "voice:puck",
+      "directed": true,
+      "label": "speak script literally embeds the 30-voice registry as data",
+      "layer": "embeds",
+      "source_role": "container",
+      "target_role": "embedded-data",
+      "attrs": {
+        "i2t:predicate": "embeds",
+        "i2t:edge_category": "containment",
+        "label": "speak script literally embeds the 30-voice registry as data"
+      }
+    },
+    {
+      "source": "c:script-embeds-optimizer-prompt",
+      "target": "artifact:speak-script",
+      "directed": true,
+      "role": "container",
+      "layer": "embeds"
+    },
+    {
+      "source": "c:script-embeds-optimizer-prompt",
+      "target": "concept:narration-intelligence",
+      "directed": true,
+      "role": "embedded-prompt-encodes",
+      "layer": "embeds"
+    },
+    {
+      "source": "c:script-embeds-optimizer-prompt",
+      "target": "concept:audio-tags-vocabulary",
+      "directed": true,
+      "role": "embedded-prompt-instructs-use-of",
+      "layer": "embeds"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "engine:gemini-tts",
+      "directed": true,
+      "role": "container",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:zephyr",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:puck",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:charon",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:kore",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:fenrir",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:leda",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:orus",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:aoede",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:callirrhoe",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:autonoe",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:enceladus",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:iapetus",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:umbriel",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:algieba",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:despina",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:erinome",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:algenib",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:rasalgethi",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:laomedeia",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:achernar",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:alnilam",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:schedar",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:gacrux",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:pulcherrima",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:achird",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:zubenelgenubi",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:vindemiatrix",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:sadachbia",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:sadaltager",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:gemini-engine-supports-voices",
+      "target": "voice:sulafat",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "engine:gcloud-chirp3-hd",
+      "target": "voice:puck",
+      "directed": true,
+      "label": "engine:gcloud-chirp3-hd accepts voices as en-US-Chirp3-HD-{name} (same 30-name surface)",
+      "layer": "supports-voices",
+      "source_role": "container",
+      "target_role": "supported-voice",
+      "attrs": {
+        "i2t:predicate": "supports-voices",
+        "i2t:edge_category": "containment",
+        "label": "engine:gcloud-chirp3-hd accepts voices as en-US-Chirp3-HD-{name} (same 30-name surface)"
+      }
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "engine:kokoro-local",
+      "directed": true,
+      "role": "container",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:af_heart",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:af_bella",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:af_nicole",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:af_sarah",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:af_sky",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:am_adam",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:am_michael",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:bf_emma",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:bf_isabella",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:bm_george",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "kokoro-voice:bm_lewis",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "c:kokoro-engine-supports-voices",
+      "target": "blend:adam-michael-50-50",
+      "directed": true,
+      "role": "supported-voice",
+      "layer": "supports-voices"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "artifact:speak-script",
+      "directed": true,
+      "role": "input-text-source",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "model:gemini-2.5-flash",
+      "directed": true,
+      "role": "agent",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "service:gemini-api",
+      "directed": true,
+      "role": "calls",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "concept:audio-tags-vocabulary",
+      "directed": true,
+      "role": "uses-vocabulary",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "concept:narration-intelligence",
+      "directed": true,
+      "role": "embodies",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "engine:gemini-tts",
+      "directed": true,
+      "role": "engine",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "model:gemini-3.1-flash-tts-preview",
+      "directed": true,
+      "role": "model-default",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "model:gemini-2.5-flash-preview-tts",
+      "directed": true,
+      "role": "model-fast-alt",
+      "layer": "synthesize-audio",
+      "attrs": {
+        "selected-by": "--fast / -f"
+      }
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "service:gemini-api",
+      "directed": true,
+      "role": "calls",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "voice:puck",
+      "directed": true,
+      "role": "voice-default",
+      "layer": "synthesize-audio",
+      "attrs": {
+        "note": "any of the 30 voices may fill this role"
+      }
+    },
+    {
+      "source": "sc:synthesize-chirp3",
+      "target": "engine:gcloud-chirp3-hd",
+      "directed": true,
+      "role": "engine",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-chirp3",
+      "target": "service:gcloud-tts-api",
+      "directed": true,
+      "role": "calls",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-chirp3",
+      "target": "voice:puck",
+      "directed": true,
+      "role": "voice-default",
+      "layer": "synthesize-audio",
+      "attrs": {
+        "note": "transformed to en-US-Chirp3-HD-Puck inside tts_one_chunk"
+      }
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "engine:kokoro-local",
+      "directed": true,
+      "role": "engine",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "model:kokoro-v1.0-onnx",
+      "directed": true,
+      "role": "model",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "artifact:kokoro_tts_py",
+      "directed": true,
+      "role": "implementation",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "blend:adam-michael-50-50",
+      "directed": true,
+      "role": "voice-default",
+      "layer": "synthesize-audio",
+      "attrs": {
+        "note": "any of the 12 Kokoro-side voices/blends may fill this role; this is the fallback when an unrecognized Gemini name is supplied"
+      }
+    },
+    {
+      "source": "tool:python3",
+      "target": "artifact:speak-script",
+      "directed": true,
+      "label": "long transcript \u2192 list of \u2264500-word chunks (paragraph-boundary-aware, sentence-split fallback). Fires only above the threshold.",
+      "layer": "chunk",
+      "source_role": "implementation",
+      "target_role": "location-of-logic",
+      "attrs": {
+        "i2t:predicate": "chunk",
+        "i2t:edge_category": "state_change",
+        "label": "long transcript \u2192 list of \u2264500-word chunks (paragraph-boundary-aware, sentence-split fallback). Fires only above the threshold."
+      }
+    },
+    {
+      "source": "tool:ffmpeg",
+      "target": "artifact:speak-script",
+      "directed": true,
+      "label": "ordered WAV chunks \u2192 single WAV via ffmpeg concat. Fires only after chunked synthesis.",
+      "layer": "concatenate",
+      "source_role": "tool",
+      "target_role": "orchestrator",
+      "attrs": {
+        "i2t:predicate": "concatenate",
+        "i2t:edge_category": "state_change",
+        "label": "ordered WAV chunks \u2192 single WAV via ffmpeg concat. Fires only after chunked synthesis."
+      }
+    },
+    {
+      "source": "tool:ffmpeg",
+      "target": "engine:gemini-tts",
+      "directed": true,
+      "label": "Gemini's raw PCM s16le 24kHz mono \u2192 WAV via ffmpeg. Gemini path only \u2014 Chirp3 and Kokoro emit WAV directly.",
+      "layer": "transcode",
+      "source_role": "tool",
+      "target_role": "source-format-comes-from",
+      "attrs": {
+        "i2t:predicate": "transcode",
+        "i2t:edge_category": "state_change",
+        "label": "Gemini's raw PCM s16le 24kHz mono \u2192 WAV via ffmpeg. Gemini path only \u2014 Chirp3 and Kokoro emit WAV directly."
+      }
+    },
+    {
+      "source": "i:speak-calls-gemini-api",
+      "target": "artifact:speak-script",
+      "directed": false,
+      "role": "client",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:speak-calls-gemini-api",
+      "target": "service:gemini-api",
+      "directed": false,
+      "role": "server",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:speak-calls-gemini-api",
+      "target": "tool:curl",
+      "directed": false,
+      "role": "transport",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:speak-calls-gcloud-tts",
+      "target": "artifact:speak-script",
+      "directed": false,
+      "role": "client",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:speak-calls-gcloud-tts",
+      "target": "service:gcloud-tts-api",
+      "directed": false,
+      "role": "server",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:speak-calls-gcloud-tts",
+      "target": "tool:curl",
+      "directed": false,
+      "role": "transport",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:speak-calls-gcloud-tts",
+      "target": "tool:gcloud-cli",
+      "directed": false,
+      "role": "auth-resolver",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:speak-invokes-kokoro-helper",
+      "target": "artifact:speak-script",
+      "directed": false,
+      "role": "parent",
+      "layer": "subprocess-invoke"
+    },
+    {
+      "source": "i:speak-invokes-kokoro-helper",
+      "target": "artifact:kokoro_tts_py",
+      "directed": false,
+      "role": "child",
+      "layer": "subprocess-invoke"
+    },
+    {
+      "source": "i:speak-invokes-kokoro-helper",
+      "target": "tool:python3",
+      "directed": false,
+      "role": "interpreter",
+      "layer": "subprocess-invoke"
+    },
+    {
+      "source": "artifact:kokoro_tts_py",
+      "target": "tool:espeak-ng",
+      "directed": false,
+      "label": "kokoro_tts.py \u2194 espeak-ng for phoneme synthesis",
+      "layer": "depends-on",
+      "source_role": "depends",
+      "target_role": "dependency",
+      "attrs": {
+        "i2t:predicate": "depends-on",
+        "i2t:edge_category": "interactivity",
+        "label": "kokoro_tts.py \u2194 espeak-ng for phoneme synthesis"
+      }
+    },
+    {
+      "source": "engine:gemini-tts",
+      "target": "auth:gemini-api-key",
+      "directed": false,
+      "label": "requires",
+      "layer": "requires",
+      "source_role": "engine",
+      "target_role": "auth-method",
+      "attrs": {
+        "i2t:predicate": "requires",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "engine:gcloud-chirp3-hd",
+      "target": "auth:gcloud-oauth",
+      "directed": false,
+      "label": "requires",
+      "layer": "requires",
+      "source_role": "engine",
+      "target_role": "auth-method",
+      "attrs": {
+        "i2t:predicate": "requires",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "engine:kokoro-local",
+      "target": "auth:none",
+      "directed": false,
+      "label": "explicit no-auth statement: Kokoro requires nothing external",
+      "layer": "requires",
+      "source_role": "engine",
+      "target_role": "auth-method",
+      "attrs": {
+        "i2t:predicate": "requires",
+        "i2t:edge_category": "interactivity",
+        "label": "explicit no-auth statement: Kokoro requires nothing external"
+      }
+    },
+    {
+      "source": "voice:puck",
+      "target": "blend:adam-michael-50-50",
+      "directed": true,
+      "label": "When -k is on, Puck routes to the adam-michael 50/50 blend",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity",
+        "label": "When -k is on, Puck routes to the adam-michael 50/50 blend"
+      }
+    },
+    {
+      "source": "voice:charon",
+      "target": "kokoro-voice:am_michael",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "voice:kore",
+      "target": "kokoro-voice:am_michael",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "voice:zephyr",
+      "target": "kokoro-voice:am_adam",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "voice:fenrir",
+      "target": "kokoro-voice:am_adam",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "voice:leda",
+      "target": "kokoro-voice:af_bella",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "voice:orus",
+      "target": "kokoro-voice:am_michael",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "voice:aoede",
+      "target": "kokoro-voice:af_sarah",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "voice:callirrhoe",
+      "target": "kokoro-voice:af_sky",
+      "directed": true,
+      "label": "maps-to",
+      "layer": "maps-to",
+      "source_role": "from",
+      "target_role": "to",
+      "attrs": {
+        "i2t:predicate": "maps-to",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "blend:adam-michael-50-50",
+      "directed": true,
+      "role": "fallback-target",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:autonoe",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:enceladus",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:iapetus",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:umbriel",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:algieba",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:despina",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:erinome",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:algenib",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:rasalgethi",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:laomedeia",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:achernar",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:alnilam",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:schedar",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:gacrux",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:pulcherrima",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:achird",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:zubenelgenubi",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:vindemiatrix",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:sadachbia",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:sadaltager",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:remaining-voices-fallback",
+      "target": "voice:sulafat",
+      "directed": true,
+      "role": "from",
+      "layer": "maps-to-default"
+    },
+    {
+      "source": "i:blend-composition",
+      "target": "blend:adam-michael-50-50",
+      "directed": true,
+      "role": "blend",
+      "layer": "blends"
+    },
+    {
+      "source": "i:blend-composition",
+      "target": "kokoro-voice:am_adam",
+      "directed": true,
+      "role": "component",
+      "layer": "blends",
+      "attrs": {
+        "weight": 0.5
+      }
+    },
+    {
+      "source": "i:blend-composition",
+      "target": "kokoro-voice:am_michael",
+      "directed": true,
+      "role": "component",
+      "layer": "blends",
+      "attrs": {
+        "weight": 0.5
+      }
+    },
+    {
+      "source": "r:commit-chain-precedes",
+      "target": "commit:dabe629",
+      "directed": true,
+      "role": "earliest",
+      "layer": "precedes"
+    },
+    {
+      "source": "r:commit-chain-precedes",
+      "target": "commit:502bf30",
+      "directed": true,
+      "role": "step",
+      "layer": "precedes",
+      "attrs": {
+        "order": 2
+      }
+    },
+    {
+      "source": "r:commit-chain-precedes",
+      "target": "commit:1a6c901",
+      "directed": true,
+      "role": "step",
+      "layer": "precedes",
+      "attrs": {
+        "order": 3
+      }
+    },
+    {
+      "source": "r:commit-chain-precedes",
+      "target": "commit:uncommitted-kokoro",
+      "directed": true,
+      "role": "latest",
+      "layer": "precedes",
+      "attrs": {
+        "order": 4
+      }
+    },
+    {
+      "source": "commit:1a6c901",
+      "target": "commit:502bf30",
+      "directed": true,
+      "label": "the --cloud\u2192--gcloud rename revised symbols 502bf30 introduced",
+      "layer": "refactors",
+      "source_role": "refactorer",
+      "target_role": "refactored",
+      "attrs": {
+        "i2t:predicate": "refactors",
+        "i2t:edge_category": "reference",
+        "label": "the --cloud\u2192--gcloud rename revised symbols 502bf30 introduced"
+      }
+    },
+    {
+      "source": "commit:502bf30",
+      "target": "engine:gcloud-chirp3-hd",
+      "directed": true,
+      "label": "introduces",
+      "layer": "introduces",
+      "source_role": "introducer",
+      "target_role": "introduced",
+      "attrs": {
+        "i2t:predicate": "introduces",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "source": "commit:uncommitted-kokoro",
+      "target": "engine:kokoro-local",
+      "directed": true,
+      "label": "introduces",
+      "layer": "introduces",
+      "source_role": "introducer",
+      "target_role": "introduced",
+      "attrs": {
+        "i2t:predicate": "introduces",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "source": "r:uncommitted-modifies",
+      "target": "commit:uncommitted-kokoro",
+      "directed": true,
+      "role": "agent",
+      "layer": "modifies"
+    },
+    {
+      "source": "r:uncommitted-modifies",
+      "target": "artifact:speak-script",
+      "directed": true,
+      "role": "modifies",
+      "layer": "modifies"
+    },
+    {
+      "source": "r:uncommitted-modifies",
+      "target": "artifact:kokoro_tts_py",
+      "directed": true,
+      "role": "creates",
+      "layer": "modifies"
+    },
+    {
+      "source": "r:uncommitted-modifies",
+      "target": "artifact:scratch-dir",
+      "directed": true,
+      "role": "creates",
+      "layer": "modifies"
+    },
+    {
+      "source": "r:uncommitted-modifies",
+      "target": "artifact:wrangler-dir",
+      "directed": true,
+      "role": "creates",
+      "layer": "modifies"
+    },
+    {
+      "source": "exploration:cloudflare-workers",
+      "target": "artifact:wrangler-dir",
+      "directed": true,
+      "label": "produces-artifact",
+      "layer": "produces-artifact",
+      "source_role": "exploration",
+      "target_role": "artifact-produced",
+      "attrs": {
+        "i2t:predicate": "produces-artifact",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "source": "r:exploration-blending-produces",
+      "target": "exploration:voice-blending",
+      "directed": true,
+      "role": "exploration",
+      "layer": "produces-artifact"
+    },
+    {
+      "source": "r:exploration-blending-produces",
+      "target": "artifact:scratch-dir",
+      "directed": true,
+      "role": "artifact-produced",
+      "layer": "produces-artifact"
+    },
+    {
+      "source": "r:exploration-blending-produces",
+      "target": "blend:adam-michael-50-50",
+      "directed": true,
+      "role": "concept-produced",
+      "layer": "produces-artifact"
+    },
+    {
+      "source": "artifact:readme",
+      "target": "concept:narration-intelligence",
+      "directed": true,
+      "label": "README + --help name 'narration intelligence' as the tool's value proposition",
+      "layer": "defines",
+      "source_role": "definer",
+      "target_role": "defined",
+      "attrs": {
+        "i2t:predicate": "defines",
+        "i2t:edge_category": "reference",
+        "label": "README + --help name 'narration intelligence' as the tool's value proposition"
+      }
+    },
+    {
+      "source": "artifact:readme",
+      "target": "concept:audio-tags-vocabulary",
+      "directed": true,
+      "label": "--help AUDIO TAGS section enumerates the bracketed vocabulary",
+      "layer": "defines",
+      "source_role": "definer",
+      "target_role": "defined",
+      "attrs": {
+        "i2t:predicate": "defines",
+        "i2t:edge_category": "reference",
+        "label": "--help AUDIO TAGS section enumerates the bracketed vocabulary"
+      }
+    },
+    {
+      "source": "artifact:speak-script",
+      "target": "artifact:config-file",
+      "directed": false,
+      "label": "speak loads ~/.config/speak/config at start (load_config) and updates it via 'speak set' (save_config_value)",
+      "layer": "reads-writes",
+      "source_role": "manager",
+      "target_role": "managed",
+      "attrs": {
+        "i2t:predicate": "reads-writes",
+        "i2t:edge_category": "interactivity",
+        "label": "speak loads ~/.config/speak/config at start (load_config) and updates it via 'speak set' (save_config_value)"
+      }
+    },
+    {
+      "source": "artifact:speak-script",
+      "target": "tool:clipboard",
+      "directed": true,
+      "label": "speak reads clipboard via pbpaste/xclip/xsel/wl-paste when -c is supplied",
+      "layer": "reads",
+      "source_role": "reader",
+      "target_role": "source",
+      "attrs": {
+        "i2t:predicate": "reads",
+        "i2t:edge_category": "interactivity",
+        "label": "speak reads clipboard via pbpaste/xclip/xsel/wl-paste when -c is supplied"
+      }
+    },
+    {
+      "source": "i:speak-plays-output",
+      "target": "artifact:speak-script",
+      "directed": true,
+      "role": "client",
+      "layer": "plays-audio"
+    },
+    {
+      "source": "i:speak-plays-output",
+      "target": "tool:audio-player",
+      "directed": true,
+      "role": "default-player",
+      "layer": "plays-audio"
+    },
+    {
+      "source": "i:speak-plays-output",
+      "target": "tool:ffplay",
+      "directed": true,
+      "role": "visualizer-player",
+      "layer": "plays-audio",
+      "attrs": {
+        "fires-when": "--show wave|spec"
+      }
+    },
+    {
+      "source": "artifact:speak-script",
+      "target": "tool:ffprobe",
+      "directed": true,
+      "label": "speak shells out to ffprobe to read duration of the rendered WAV before displaying summary",
+      "layer": "probes",
+      "source_role": "caller",
+      "target_role": "tool",
+      "attrs": {
+        "i2t:predicate": "probes",
+        "i2t:edge_category": "interactivity",
+        "label": "speak shells out to ffprobe to read duration of the rendered WAV before displaying summary"
+      }
+    }
+  ]
+}

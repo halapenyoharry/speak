@@ -1,0 +1,262 @@
+# engines.yaml — engine registry for the `speak` TTS CLI
+#
+# This file is DATA, not code. The driver loads + validates it at startup via
+# python3 + PyYAML (fail loud, exit nonzero). PyYAML is a precondition: if the
+# import fails the driver MUST error with `pip3 install pyyaml` and never
+# silently degrade.
+#
+# There are EXACTLY FOUR engines, keyed by their config-value: gemini, gcloud,
+# kokoro, bark. Cloudflare / .wrangler/ is a deployment target, NOT a TTS engine — it
+# is deliberately absent.
+#
+# `capabilities` is the SINGLE source of truth for optimizer gating. The
+# optimizer (top-level section below) EMITS the audio-tags vocabulary; an engine
+# CONSUMES it only if it lists `audio-tags` in its capabilities. The optimizer
+# fires IFF the active engine lists audio-tags AND its own Gemini auth is
+# satisfiable. Under gcloud and kokoro the optimizer is SKIPPED entirely — this
+# is what makes kokoro offline by default. Do NOT re-add a global optimizer
+# "for the cloud path"; the empty capabilities list is the gate.
+#
+# Missing realization is a HARD ERROR (see voices.yaml + policy:missing-realization).
+# There is no fallback engine, no nearest-voice, no default realization here.
+
+# ── Top-level optimizer (narration director) ─────────────────────────
+# NOT a TTS model: a text-mode LLM call (Gemini or OpenRouter) that rewrites
+# input into an audio-tag-annotated transcript. It authenticates INDEPENDENT
+# of the active synthesis engine (GEMINI_API_KEY or OPENROUTER_API_KEY).
+# It only RUNS for engines that consume audio-tags (currently gemini).
+optimizer:
+  default_provider: gemini
+  model: gemini-2.5-flash
+  auth: gemini-api-key
+  provides_capability: audio-tags
+  providers:
+    gemini:
+      default_model: gemini-2.5-flash
+      auth: gemini-api-key
+      endpoint: https://generativelanguage.googleapis.com/v1beta/models
+    openrouter:
+      default_model: openrouter/free
+      auth: openrouter-api-key
+      endpoint: https://openrouter.ai/api/v1/chat/completions
+
+# ── Engines (keyed by config-value) ──────────────────────────────────
+engines:
+
+  # ── Gemini Native TTS (cloud, token-billed) ──────────────────────
+  gemini:
+    label: Gemini Native TTS
+    deployment: cloud-api
+    auth: gemini-api-key
+    # ONLY engine that consumes the optimizer's audio-tags vocabulary.
+    capabilities:
+      - audio-tags
+    default_model: default
+    models:
+      default: gemini-3.1-flash-tts-preview
+      fast: gemini-2.5-flash-preview-tts
+    endpoint: https://generativelanguage.googleapis.com/v1beta/models
+    # Gemini emits raw PCM s16le / 24000 Hz / mono. The adapter MUST transcode
+    # to WAV via ffmpeg (-f s16le -ar 24000 -ac 1). This format is load-bearing
+    # for gemini ONLY; it must not be applied to gcloud or kokoro.
+    output_format: pcm-s16le-24k-mono
+    needs_transcode: true
+    voice_prefix: null
+    default_language_code: en-US
+    billing_unit: tokens
+    max_in_flight: 3
+    default_persona: puck
+    preconditions:
+      - kind: env
+        name: GEMINI_API_KEY
+        hint: 'export GEMINI_API_KEY="your-key-here" (get one at https://aistudio.google.com/apikey)'
+
+  # ── Google Cloud Chirp 3 HD (cloud, character-billed) ─────────────
+  gcloud:
+    label: Google Cloud Chirp 3 HD
+    deployment: cloud-api
+    auth: gcloud-oauth
+    # No audio-tags: Chirp3 ingests plain input.text and cannot interpret
+    # bracket tags — optimizing would waste spend AND degrade audio. Optimizer
+    # is skipped under this engine.
+    capabilities: []
+    default_model: default
+    models:
+      default: null
+    endpoint: https://texttospeech.googleapis.com/v1/text:synthesize
+    # Chirp3 returns LINEAR16 base64 → decoded straight to WAV (no transcode).
+    output_format: linear16
+    needs_transcode: false
+    # Voices are addressed as en-US-Chirp3-HD-<name>; the adapter prepends this
+    # prefix to the realization voice id when not already present.
+    voice_prefix: en-US-Chirp3-HD-
+    default_language_code: en-US
+    # gcloud bills by character; the adapter writes `<charcount>,0` to the
+    # .tokens sidecar as a billing proxy.
+    billing_unit: characters
+    max_in_flight: 3
+    # Used for the X-Goog-User-Project header when `gcloud config get-value
+    # project` returns nothing. This is a real, baked-in fallback value.
+    project_fallback: g-drive-474022
+    default_persona: puck
+    preconditions:
+      - kind: binary
+        name: gcloud
+        hint: 'install the Google Cloud SDK so the `gcloud` CLI is on PATH'
+      - kind: token
+        name: gcloud-access-token
+        hint: 'run: gcloud auth application-default login'
+
+  # ── Kokoro Local (offline, no billing) ────────────────────────────
+  kokoro:
+    label: Kokoro Local
+    deployment: offline-local
+    auth: none
+    # No audio-tags: optimizer skipped → genuinely offline by default
+    # (no GEMINI_API_KEY required for a bare kokoro run).
+    capabilities: []
+    default_model: onnx
+    models:
+      onnx: kokoro-v1.0.onnx
+      voices_bin: voices-v1.0.bin
+    # Local model files; auto-downloaded into `dir` from `download_base` on first
+    # use (a network fetch — surfaced explicitly per Harold's no-silent-download rule).
+    model:
+      onnx: kokoro-v1.0.onnx
+      voices_bin: voices-v1.0.bin
+      dir: ~/.config/speak/models
+      download_base: https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/
+    endpoint: null
+    # Kokoro writes WAV directly via soundfile.
+    output_format: wav
+    needs_transcode: false
+    voice_prefix: null
+    default_language_code: en-us
+    billing_unit: none
+    # Serial: local CPU/GPU-bound, one synthesis at a time.
+    max_in_flight: 1
+    default_persona: puck
+    # Native voice → locale map. The adapter looks up language_code FROM THIS
+    # DATA, never by inspecting the bf_/bm_ string prefix. en-gb voices are the
+    # British (b*) set; en-us are the American (a*) set.
+    native_voices:
+      # American Female
+      af_alloy:     { language_code: en-us }
+      af_aoede:     { language_code: en-us }
+      af_bella:     { language_code: en-us }
+      af_heart:     { language_code: en-us }
+      af_jessica:   { language_code: en-us }
+      af_kore:      { language_code: en-us }
+      af_nicole:    { language_code: en-us }
+      af_nova:      { language_code: en-us }
+      af_river:     { language_code: en-us }
+      af_sarah:     { language_code: en-us }
+      af_sky:       { language_code: en-us }
+      # American Male
+      am_adam:      { language_code: en-us }
+      am_echo:      { language_code: en-us }
+      am_eric:      { language_code: en-us }
+      am_fenrir:    { language_code: en-us }
+      am_liam:      { language_code: en-us }
+      am_michael:   { language_code: en-us }
+      am_onyx:      { language_code: en-us }
+      am_puck:      { language_code: en-us }
+      am_santa:     { language_code: en-us }
+      # British Female
+      bf_alice:     { language_code: en-gb }
+      bf_emma:      { language_code: en-gb }
+      bf_isabella:  { language_code: en-gb }
+      bf_lily:      { language_code: en-gb }
+      # British Male
+      bm_daniel:    { language_code: en-gb }
+      bm_fable:     { language_code: en-gb }
+      bm_george:    { language_code: en-gb }
+      bm_lewis:     { language_code: en-gb }
+      # International
+      ef_dora:      { language_code: es }
+      em_alex:      { language_code: es }
+      em_santa:     { language_code: es }
+      ff_siwis:     { language_code: fr-fr }
+      hf_alpha:     { language_code: hi }
+      hf_beta:      { language_code: hi }
+      hm_omega:     { language_code: hi }
+      hm_psi:       { language_code: hi }
+      if_sara:      { language_code: it }
+      im_nicola:    { language_code: it }
+      jf_alpha:     { language_code: ja }
+      jf_gongitsune: { language_code: ja }
+      jf_nezumi:    { language_code: ja }
+      jf_tebukuro:  { language_code: ja }
+      jm_kumo:      { language_code: ja }
+      pf_dora:      { language_code: pt-br }
+      pm_alex:      { language_code: pt-br }
+      pm_santa:     { language_code: pt-br }
+      zf_xiaobei:   { language_code: cmn }
+      zf_xiaoni:    { language_code: cmn }
+      zf_xiaoxiao:  { language_code: cmn }
+      zf_xiaoyi:    { language_code: cmn }
+      zm_yunjian:   { language_code: cmn }
+      zm_yunxi:     { language_code: cmn }
+      zm_yunxia:    { language_code: cmn }
+      zm_yunyang:   { language_code: cmn }
+    preconditions:
+      - kind: binary
+        name: python3
+        hint: 'python3 is required to run the kokoro adapter'
+      - kind: python-module
+        name: kokoro_onnx
+        hint: 'pip3 install kokoro-onnx soundfile'
+      - kind: binary
+        name: espeak-ng
+        hint: 'macOS: brew install espeak-ng  |  Pop!_OS/Debian: sudo apt install espeak-ng'
+      - kind: model-file
+        name: kokoro-v1.0.onnx
+        hint: 'auto-downloaded into ~/.config/speak/models on first use'
+      - kind: model-file
+        name: voices-v1.0.bin
+        hint: 'auto-downloaded into ~/.config/speak/models on first use'
+
+  # ── Suno Bark (local neural audio generator) ──────────────────────
+  bark:
+    label: Suno Bark
+    deployment: offline-local
+    auth: none
+    # Bark natively generates prosody from bracketed audio tags
+    capabilities:
+      - audio-tags
+    default_model: default
+    models:
+      default: suno/bark-small
+      large: suno/bark
+    endpoint: null
+    output_format: wav
+    needs_transcode: false
+    voice_prefix: null
+    default_language_code: en-US
+    billing_unit: none
+    max_in_flight: 1
+    default_persona: puck
+    native_voices:
+      v2/en_speaker_0: { language_code: en-US }
+      v2/en_speaker_1: { language_code: en-US }
+      v2/en_speaker_2: { language_code: en-US }
+      v2/en_speaker_3: { language_code: en-US }
+      v2/en_speaker_4: { language_code: en-US }
+      v2/en_speaker_5: { language_code: en-US }
+      v2/en_speaker_6: { language_code: en-US }
+      v2/en_speaker_7: { language_code: en-US }
+      v2/en_speaker_8: { language_code: en-US }
+      v2/en_speaker_9: { language_code: en-US }
+    preconditions:
+      - kind: binary
+        name: python3
+        hint: 'python3 is required to run the bark adapter'
+      - kind: python-module
+        name: transformers
+        hint: 'pip3 install transformers torch soundfile scipy'
+      - kind: python-module
+        name: torch
+        hint: 'pip3 install torch'
+      - kind: python-module
+        name: soundfile
+        hint: 'pip3 install soundfile'

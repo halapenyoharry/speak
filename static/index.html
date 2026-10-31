@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="lothal">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    try {
+      const savedTheme = localStorage.getItem("speak-theme");
+      if (savedTheme === "arcade" || savedTheme === "lothal") {
+        document.documentElement.dataset.theme = savedTheme;
+      }
+    } catch (_) {}
+  </script>
+  <title>speak — Web UI Sidecar</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      &:has(> head > meta[name="color-scheme"][content="dark"]),
+      &[data-theme="lothal"],
+      &[data-theme="arcade"] {
+        color-scheme: dark;
+      }
+
+      /* Theme 1 (Default): Lothal Astromech — Monochromatic Electric Cyan Telemetry */
+      --brand-color: #00f5d4;
+      --bg-base: #090d16;
+      --bg-panel: #101726;
+      --bg-elevated: #162033;
+      --bg-hud: #060911;
+      --border-subtle: #1f2d47;
+      --border-focus: #00ffff;
+      --text-bright: #00ffff;
+      --text-soft: #00becd;
+      --text-dim: #4a7c89;
+      --text-main: #e2f1f5;
+      --text-muted: #8aa6b0;
+      --status-green: #51cf66;
+      --status-red: #ff6b6b;
+      --status-yellow: #fcc419;
+      --btn-primary-bg: #005f6b;
+      --btn-primary-hover: #007d8c;
+      --btn-primary-border: #00ffff;
+      --panel-shadow: none;
+      --text-glow: none;
+      --active-word-glow: none;
+      --hud-grid-bg: none;
+      --font-prose: "Atkinson Hyperlegible", "Lexend", "OpenDyslexic Nerd Font", system-ui, -apple-system, sans-serif;
+      --font-mono: "OpenDyslexicMono Nerd Font", "OpenDyslexic Nerd Font", ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    /* Theme 2: 1984 Vector Arcade — 80s CRT Vector Cabinet Vibes */
+    :root[data-theme="arcade"],
+    :root:has(#theme-arcade:checked) {
+      --brand-color: #ff2a85;
+      --bg-base: #070210;
+      --bg-panel: #120624;
+      --bg-elevated: #1f0b3d;
+      --bg-hud: #05010c;
+      --border-subtle: #ff2a85;
+      --border-focus: #ffe600;
+      --text-bright: #ffe600;
+      --text-soft: #00f0ff;
+      --text-dim: #9d4edd;
+      --text-main: #fff0f8;
+      --text-muted: #d084ff;
+      --status-green: #00ff66;
+      --status-red: #ff0055;
+      --status-yellow: #ffe600;
+      --btn-primary-bg: #b80058;
+      --btn-primary-hover: #ff007f;
+      --btn-primary-border: #ffe600;
+      --panel-shadow: 0 0 14px rgba(255, 42, 133, 0.35), inset 0 0 12px rgba(0, 240, 255, 0.08);
+      --text-glow: 0 0 8px rgba(0, 240, 255, 0.65);
+      --active-word-glow: 0 0 12px rgba(255, 230, 0, 0.9), 0 0 24px rgba(255, 42, 133, 0.7);
+      --hud-grid-bg:
+        linear-gradient(rgba(255, 42, 133, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.12) 1px, transparent 1px);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-prose);
+      font-size: 1rem;
+      line-height: 1.5;
+      accent-color: var(--brand-color);
+      position: relative;
+      min-height: 100vh;
+    }
+
+    /* Subtle CRT scanline overlay active in 1984 Vector Arcade theme */
+    :root[data-theme="arcade"] body::after,
+    :root:has(#theme-arcade:checked) body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.22) 0px,
+        rgba(0, 0, 0, 0.22) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    }
+
+    header {
+      border-block-end: 2px solid var(--border-subtle);
+      background-color: var(--bg-panel);
+      box-shadow: var(--panel-shadow);
+      padding: 1rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      color: var(--text-bright);
+      text-shadow: var(--active-word-glow);
+    }
+
+    .brand-subtitle {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      font-family: var(--font-prose);
+      font-weight: normal;
+      text-shadow: none;
+    }
+
+    .header-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .theme-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.25rem 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+    }
+
+    .theme-switcher-label {
+      color: var(--text-muted);
+      padding-inline: 0.35rem;
+      font-weight: 600;
+    }
+
+    .theme-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.65rem;
+      min-height: 36px;
+      border-radius: 5px;
+      cursor: pointer;
+      color: var(--text-main);
+      border: 1px solid transparent;
+      user-select: none;
+    }
+
+    .theme-option:has(input:checked) {
+      border-color: var(--brand-color);
+      background-color: var(--bg-elevated);
+      color: var(--text-bright);
+      font-weight: 700;
+    }
+
+    .quick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    main {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    @media (max-width: 960px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      box-shadow: var(--panel-shadow);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-block-end: 1.5rem;
+    }
+
+    .panel-title {
+      margin-block: 0 1rem;
+      font-size: 1rem;
+      font-family: var(--font-mono);
+      color: var(--text-soft);
+      text-shadow: var(--text-glow);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    fieldset {
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 1rem;
+      margin-block-end: 1.25rem;
+      background-color: rgba(22, 32, 51, 0.35);
+    }
+
+    legend {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text-soft);
+      text-shadow: var(--text-glow);
+      padding-inline: 0.5rem;
+    }
+
+    .form-group {
+      margin-block-end: 1.25rem;
+    }
+
+    .form-group:last-child {
+      margin-block-end: 0;
+    }
+
+    label.field-label,
+    span.field-label {
+      display: block;
+      font-weight: 600;
+      margin-block-end: 0.35rem;
+      color: var(--text-main);
+    }
+
+    .hint {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-block-start: 0.25rem;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      font-size: 1rem;
+      font-family: var(--font-prose);
+      padding: 0.65rem 0.75rem;
+      min-height: 48px;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    button:focus-visible {
+      outline: 3px solid var(--border-focus);
+      outline-offset: 2px;
+    }
+
+    input:invalid:user-invalid,
+    textarea:invalid:user-invalid {
+      border-color: var(--status-red);
+    }
+
+    .radio-group,
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .choice-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.85rem;
+      min-height: 48px;
+      background-color: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .choice-pill:has(input:checked) {
+      border-color: var(--brand-color);
+      background-color: var(--bg-elevated);
+      box-shadow: var(--panel-shadow);
+    }
+
+    /* Fallback for older browsers without accent-color */
+    @supports not (accent-color: var(--brand-color)) {
+      input[type="checkbox"],
+      input[type="radio"] {
+        outline: 1px solid var(--brand-color);
+      }
+    }
+
+    .tag-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-block-top: 0.5rem;
+    }
+
+    button {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      min-height: 48px;
+      padding: 0.6rem 1.1rem;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      background-color: var(--bg-elevated);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--text-soft);
+      box-shadow: var(--panel-shadow);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    button.btn-primary {
+      background-color: var(--btn-primary-bg);
+      border: 2px solid var(--btn-primary-border);
+      color: #ffffff;
+      font-weight: 700;
+      width: 100%;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      box-shadow: var(--panel-shadow);
+    }
+
+    button.btn-primary:hover:not(:disabled) {
+      background-color: var(--btn-primary-hover);
+    }
+
+    button.btn-chip {
+      min-height: 34px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.8rem;
+      color: var(--text-soft);
+    }
+
+    /* 3-Line Teleprompter HUD */
+    .teleprompter-hud {
+      background-color: var(--bg-hud);
+      background-image: var(--hud-grid-bg);
+      background-size: 28px 28px;
+      border: 2px solid var(--border-subtle);
+      box-shadow: var(--panel-shadow);
+      border-radius: 8px;
+      padding: 1.5rem 1.25rem;
+      font-family: var(--font-mono);
+      margin-block-end: 1.5rem;
+    }
+
+    .caption-aperture {
+      min-height: 5.4rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.45rem;
+      margin-block-end: 1.25rem;
+    }
+
+    .caption-line {
+      min-height: 1.5rem;
+      font-size: 1.08rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .word-past {
+      color: var(--text-soft);
+      text-shadow: var(--text-glow);
+    }
+
+    .word-active-bold {
+      color: var(--text-bright);
+      font-weight: 700;
+      text-shadow: var(--active-word-glow);
+    }
+
+    .word-active-underline {
+      color: var(--text-bright);
+      text-decoration: underline;
+      text-shadow: var(--active-word-glow);
+    }
+
+    .word-active-both {
+      color: var(--text-bright);
+      font-weight: 700;
+      text-decoration: underline;
+      text-shadow: var(--active-word-glow);
+    }
+
+    .word-active-inverse {
+      background-color: var(--text-bright);
+      color: #000000;
+      font-weight: 700;
+      padding-inline: 2px;
+      border-radius: 2px;
+    }
+
+    .word-future {
+      color: var(--text-dim);
+    }
+
+    .telemetry-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.85rem;
+      font-size: 0.92rem;
+      padding-block-start: 0.75rem;
+      border-block-start: 1px solid var(--border-subtle);
+    }
+
+    .voice-badge {
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-shadow: var(--text-glow);
+    }
+
+    .status-beacon {
+      font-weight: 600;
+    }
+
+    .beacon-play {
+      color: var(--status-green);
+      text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
+    }
+
+    .beacon-idle {
+      color: var(--text-dim);
+    }
+
+    .hud-progress-track {
+      flex: 1;
+      min-width: 120px;
+      height: 10px;
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .hud-progress-fill {
+      height: 100%;
+      width: 0%;
+      background-color: var(--text-bright);
+      box-shadow: var(--active-word-glow);
+      transition: width 0.08s linear;
+    }
+
+    .hud-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-block-top: 1rem;
+    }
+
+    audio {
+      flex: 1;
+      height: 40px;
+    }
+
+    /* Live Terminal SSE Output */
+    .terminal-log {
+      background-color: var(--bg-hud);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 0.9rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      min-height: 180px;
+      max-height: 320px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: var(--text-main);
+    }
+
+    .log-line {
+      margin-block-end: 0.25rem;
+    }
+
+    .log-line.cmd {
+      color: var(--status-yellow);
+    }
+
+    .log-line.cr {
+      color: var(--text-bright);
+    }
+
+    .log-line.done-ok {
+      color: var(--status-green);
+      font-weight: 700;
+    }
+
+    .log-line.done-err {
+      color: var(--status-red);
+      font-weight: 700;
+    }
+
+    /* Outputs List */
+    .outputs-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .output-card {
+      background-color: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .output-card-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+
+    .output-transcript {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .output-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 class="brand-title">
+      <span>speak</span>
+      <span class="brand-subtitle" id="theme-tagline">Lothal Astromech — 3-Line Telemetry Sidecar</span>
+    </h1>
+
+    <div class="header-controls">
+      <div class="theme-switcher" role="radiogroup" aria-label="Color Theme">
+        <span class="theme-switcher-label">THEME:</span>
+        <label class="theme-option" for="theme-lothal">
+          <input type="radio" id="theme-lothal" name="ui_theme" value="lothal" checked>
+          <span>◇ Lothal Astromech</span>
+        </label>
+        <label class="theme-option" for="theme-arcade">
+          <input type="radio" id="theme-arcade" name="ui_theme" value="arcade">
+          <span>🕹️ 1984 Vector Arcade</span>
+        </label>
+      </div>
+
+      <div class="quick-actions" id="quick-subcommands" role="toolbar" aria-label="CLI Subcommands">
+        <button type="button" data-subcmd="voices --all">speak voices --all</button>
+        <button type="button" data-subcmd="daemon status">speak daemon status</button>
+        <button type="button" data-subcmd="set">speak set (config)</button>
+        <button type="button" data-subcmd="--help">speak --help</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Column: Introspected CLI Form -->
+    <section aria-labelledby="form-heading">
+      <div class="panel">
+        <h2 class="panel-title" id="form-heading">
+          <span>Synthesize &amp; Narrate</span>
+          <span id="schema-badge" class="hint">Introspecting CLI...</span>
+        </h2>
+
+        <form id="speak-form" action="/api/run" method="POST">
+          <fieldset>
+            <legend>1. Engine &amp; Persona</legend>
+
+            <div class="form-group">
+              <span class="field-label" id="engine-label">Synthesis Engine (<code>-e, --engine</code>)</span>
+              <div class="radio-group" id="engine-radios" role="radiogroup" aria-labelledby="engine-label">
+                <!-- Populated dynamically from /api/schema -->
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="field-label" for="voice-select">Voice Persona (<code>-v, --voice</code>)</label>
+              <select id="voice-select" name="voice" aria-describedby="voice-intent-hint">
+                <!-- Populated dynamically from /api/schema -->
+              </select>
+              <span id="voice-intent-hint" class="hint">Select a persona to see its style and realization.</span>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>2. Narration Text &amp; Audio Tags</legend>
+
+            <div class="form-group">
+              <label class="field-label" for="text-input">Prose / Transcript</label>
+              <textarea
+                id="text-input"
+                name="text"
+                placeholder="Enter prose to synthesize, or check 'Read from macOS Clipboard (-c)' below..."
+                aria-describedby="text-hint"
+              >All systems nominal, captain. Visual telemetry is online and tracking word by word.</textarea>
+              <span id="text-hint" class="hint">Press Cmd+Enter (or Ctrl+Enter) to synthesize immediately.</span>
+
+              <div class="tag-chips" id="audio-tags-bar" aria-label="Insert audio tag">
+                <!-- Populated from /api/schema -->
+              </div>
+            </div>
+
+            <div class="form-group checkbox-group">
+              <label class="choice-pill" for="flag-clipboard">
+                <input type="checkbox" id="flag-clipboard" name="clipboard">
+                <span>Read Clipboard (<code>-c</code>)</span>
+              </label>
+              <label class="choice-pill" for="flag-raw">
+                <input type="checkbox" id="flag-raw" name="raw">
+                <span>Raw / No Optimizer (<code>-r</code>)</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>3. Teleprompter &amp; Output Routing</legend>
+
+            <div class="form-group">
+              <span class="field-label" id="target-label">Playback Target</span>
+              <div class="radio-group" role="radiogroup" aria-labelledby="target-label">
+                <label class="choice-pill" for="target-browser">
+                  <input type="radio" id="target-browser" name="playback_target" value="browser" checked>
+                  <span>Save WAV &amp; Play in Browser Teleprompter (<code>-o</code>)</span>
+                </label>
+                <label class="choice-pill" for="target-host">
+                  <input type="radio" id="target-host" name="playback_target" value="host">
+                  <span>Play directly on Mac Terminal/Speaker</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="field-label" for="emphasis-select">Active Word Emphasis</label>
+              <select id="emphasis-select" name="emphasis">
+                <option value="bold" selected>Bold Electric Glow (Default — No Underline)</option>
+                <option value="underline">Underline Only</option>
+                <option value="both">Bold + Underline</option>
+                <option value="inverse">Inverse Block</option>
+              </select>
+            </div>
+          </fieldset>
+
+          <div id="form-error" role="alert" aria-live="polite" style="color: var(--status-red); margin-block-end: 0.75rem;"></div>
+
+          <button type="submit" id="submit-btn" class="btn-primary">
+            Synthesize Speech
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Right Column: 3-Line Teleprompter + Live SSE Console + Artifact Browser -->
+    <section aria-label="Teleprompter and Live Telemetry">
+      <!-- 3-Line Web Teleprompter -->
+      <div class="teleprompter-hud" aria-label="3-Line Closed Captioning Teleprompter">
+        <div class="caption-aperture" id="caption-aperture">
+          <div class="caption-line word-past" id="cap-line-0"></div>
+          <div class="caption-line" id="cap-line-1">Ready for synthesis.</div>
+          <div class="caption-line word-future" id="cap-line-2"></div>
+        </div>
+
+        <div class="telemetry-bar">
+          <span class="voice-badge" id="hud-voice" style="color: #00f5d4;">RIVER</span>
+          <span class="status-beacon beacon-idle" id="hud-beacon">○ IDLE</span>
+          <div class="hud-progress-track" id="hud-progress-track" title="Click to seek">
+            <div class="hud-progress-fill" id="hud-progress-fill"></div>
+          </div>
+          <span id="hud-pct">0%</span>
+          <span id="hud-time">00:00/00:00</span>
+        </div>
+
+        <div class="hud-controls">
+          <button type="button" id="play-pause-btn">▶ Play / Pause (Space)</button>
+          <audio id="audio-player" controls preload="metadata"></audio>
+        </div>
+      </div>
+
+      <!-- Live SSE Process Stream -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>Live CLI Stream (SSE <code>text/event-stream</code>)</span>
+          <button type="button" id="clear-log-btn" class="btn-chip">Clear Log</button>
+        </div>
+        <div class="terminal-log" id="terminal-log" role="log" aria-live="polite"></div>
+      </div>
+
+      <!-- Artifact / Output Browser -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>Generated Audio Artifacts (<code>/api/outputs</code>)</span>
+          <button type="button" id="refresh-outputs-btn" class="btn-chip">↻ Refresh</button>
+        </div>
+        <div class="outputs-list" id="outputs-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const THEME_META = {
+      lothal: {
+        tagline: "Lothal Astromech — 3-Line Telemetry Sidecar",
+        submitLabel: "Synthesize Speech",
+      },
+      arcade: {
+        tagline: "1984 Vector Arcade — INSERT COIN · HIGH SCORE EDITION",
+        submitLabel: "🕹️ INSERT COIN & SYNTHESIZE (1UP)",
+      },
+    };
+
+    const state = {
+      schema: null,
+      selectedEngine: "kokoro",
+      selectedVoice: "river",
+      activeTranscript: "All systems nominal, captain. Visual telemetry is online and tracking word by word.",
+      words: [],
+      lineGroups: [],
+      emphasis: "bold",
+      isRunning: false,
+      theme: document.documentElement.dataset.theme || "lothal",
+    };
+
+    const engineRadiosEl = document.getElementById("engine-radios");
+    const voiceSelectEl = document.getElementById("voice-select");
+    const voiceIntentHintEl = document.getElementById("voice-intent-hint");
+    const audioTagsBarEl = document.getElementById("audio-tags-bar");
+    const textInputEl = document.getElementById("text-input");
+    const speakFormEl = document.getElementById("speak-form");
+    const submitBtnEl = document.getElementById("submit-btn");
+    const terminalLogEl = document.getElementById("terminal-log");
+    const outputsListEl = document.getElementById("outputs-list");
+    const audioPlayerEl = document.getElementById("audio-player");
+    const playPauseBtnEl = document.getElementById("play-pause-btn");
+    const emphasisSelectEl = document.getElementById("emphasis-select");
+    const themeTaglineEl = document.getElementById("theme-tagline");
+
+    const capLines = [
+      document.getElementById("cap-line-0"),
+      document.getElementById("cap-line-1"),
+      document.getElementById("cap-line-2"),
+    ];
+    const hudVoiceEl = document.getElementById("hud-voice");
+    const hudBeaconEl = document.getElementById("hud-beacon");
+    const hudProgressFillEl = document.getElementById("hud-progress-fill");
+    const hudProgressTrackEl = document.getElementById("hud-progress-track");
+    const hudPctEl = document.getElementById("hud-pct");
+    const hudTimeEl = document.getElementById("hud-time");
+
+    function applyTheme(themeId, persist = true) {
+      const resolved = themeId === "arcade" ? "arcade" : "lothal";
+      state.theme = resolved;
+      document.documentElement.dataset.theme = resolved;
+
+      const radioEl = document.getElementById(`theme-${resolved}`);
+      if (radioEl) radioEl.checked = true;
+
+      const meta = THEME_META[resolved] || THEME_META.lothal;
+      themeTaglineEl.textContent = meta.tagline;
+      submitBtnEl.textContent = meta.submitLabel;
+
+      if (persist) {
+        try {
+          localStorage.setItem("speak-theme", resolved);
+        } catch (_) {}
+      }
+    }
+
+    // Bind theme radio buttons
+    document.querySelectorAll('input[name="ui_theme"]').forEach((radio) => {
+      radio.addEventListener("change", (e) => {
+        if (e.target.checked) {
+          applyTheme(e.target.value, true);
+        }
+      });
+    });
+
+    // Cross-tab synchronization via storage event
+    window.addEventListener("storage", (e) => {
+      if (e.key === "speak-theme" && e.newValue) {
+        applyTheme(e.newValue, false);
+      }
+    });
+
+    // Initialize theme state on load
+    applyTheme(state.theme, false);
+
+    function formatMMSS(sec) {
+      if (!Number.isFinite(sec) || sec < 0) return "00:00";
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    function wrapWordsIntoLines(words, maxChars = 48) {
+      const groups = [];
+      let current = [];
+      let curLen = 0;
+
+      for (const w of words) {
+        const wLen = w.length;
+        if (current.length > 0 && curLen + 1 + wLen > maxChars) {
+          groups.push(current);
+          current = [w];
+          curLen = wLen;
+        } else {
+          current.push(w);
+          curLen += (current.length === 1 ? wLen : 1 + wLen);
+          if (
+            curLen >= maxChars * 0.55 &&
+            (w.endsWith(".") || w.endsWith("!") || w.endsWith("?") || w.endsWith(";") || w.endsWith(":"))
+          ) {
+            groups.push(current);
+            current = [];
+            curLen = 0;
+          }
+        }
+      }
+      if (current.length > 0) {
+        groups.push(current);
+      }
+      return groups;
+    }
+
+    function setTeleprompterTranscript(text, voiceId = "river") {
+      state.activeTranscript = text || "";
+      state.words = state.activeTranscript.trim().split(/\s+/).filter(Boolean);
+      state.lineGroups = wrapWordsIntoLines(state.words, 48);
+
+      const persona = (state.schema?.personas || []).find(
+        (p) => p.id.toLowerCase() === (voiceId || "").toLowerCase()
+      );
+      hudVoiceEl.textContent = (voiceId || "VOICE").toUpperCase();
+      hudVoiceEl.style.color = persona ? persona.hex_color : "#00f5d4";
+
+      renderTeleprompterFrame(0, audioPlayerEl.duration || 1);
+    }
+
+    function renderTeleprompterFrame(elapsed, duration) {
+      for (const el of capLines) {
+        el.textContent = "";
+        el.className = "caption-line";
+      }
+
+      if (!state.words.length || !state.lineGroups.length) {
+        capLines[1].textContent = "No transcript loaded.";
+        return;
+      }
+
+      const ratio = duration > 0 ? Math.min(1.0, Math.max(0, elapsed / duration)) : 0;
+      const totalWords = state.words.length;
+      const currWordIdx = minMax(Math.floor(ratio * totalWords), 0, totalWords - 1);
+
+      let wordCounter = 0;
+      let activeLineIdx = 0;
+      let activeWordInLine = 0;
+
+      for (let lIdx = 0; lIdx < state.lineGroups.length; lIdx++) {
+        const lineWords = state.lineGroups[lIdx];
+        if (wordCounter + lineWords.length > currWordIdx) {
+          activeLineIdx = lIdx;
+          activeWordInLine = currWordIdx - wordCounter;
+          break;
+        }
+        wordCounter += lineWords.length;
+        if (lIdx === state.lineGroups.length - 1) {
+          activeLineIdx = lIdx;
+          activeWordInLine = lineWords.length - 1;
+        }
+      }
+
+      const startLineIdx = activeLineIdx - 1;
+      for (let slot = 0; slot < 3; slot++) {
+        const targetIdx = startLineIdx + slot;
+        const lineEl = capLines[slot];
+        if (targetIdx < 0 || targetIdx >= state.lineGroups.length) {
+          lineEl.textContent = "";
+          continue;
+        }
+        const lineWords = state.lineGroups[targetIdx];
+        if (targetIdx < activeLineIdx) {
+          lineEl.className = "caption-line word-past";
+          lineEl.textContent = lineWords.join(" ");
+        } else if (targetIdx > activeLineIdx) {
+          lineEl.className = "caption-line word-future";
+          lineEl.textContent = lineWords.join(" ");
+        } else {
+          lineWords.forEach((w, wIdx) => {
+            const span = document.createElement("span");
+            if (wIdx < activeWordInLine) {
+              span.className = "word-past";
+            } else if (wIdx === activeWordInLine) {
+              span.className = `word-active-${state.emphasis}`;
+            } else {
+              span.className = "word-future";
+            }
+            span.textContent = w;
+            lineEl.appendChild(span);
+            if (wIdx < lineWords.length - 1) {
+              lineEl.appendChild(document.createTextNode(" "));
+            }
+          });
+        }
+      }
+
+      const pct = Math.round(ratio * 100);
+      hudProgressFillEl.style.width = `${pct}%`;
+      hudPctEl.textContent = `${pct}%`;
+      hudTimeEl.textContent = `${formatMMSS(elapsed)}/${formatMMSS(duration)}`;
+    }
+
+    function minMax(val, min, max) {
+      return Math.min(max, Math.max(min, val));
+    }
+
+    audioPlayerEl.addEventListener("play", () => {
+      hudBeaconEl.textContent = "● PLAY";
+      hudBeaconEl.className = "status-beacon beacon-play";
+      requestAnimationFrame(stepTeleprompter);
+    });
+
+    audioPlayerEl.addEventListener("pause", () => {
+      hudBeaconEl.textContent = "○ IDLE";
+      hudBeaconEl.className = "status-beacon beacon-idle";
+    });
+
+    audioPlayerEl.addEventListener("ended", () => {
+      hudBeaconEl.textContent = "● DONE";
+      hudBeaconEl.className = "status-beacon beacon-play";
+      renderTeleprompterFrame(audioPlayerEl.duration || 1, audioPlayerEl.duration || 1);
+    });
+
+    audioPlayerEl.addEventListener("timeupdate", () => {
+      renderTeleprompterFrame(audioPlayerEl.currentTime, audioPlayerEl.duration || 1);
+    });
+
+    function stepTeleprompter() {
+      if (!audioPlayerEl.paused) {
+        renderTeleprompterFrame(audioPlayerEl.currentTime, audioPlayerEl.duration || 1);
+        requestAnimationFrame(stepTeleprompter);
+      }
+    }
+
+    hudProgressTrackEl.addEventListener("click", (e) => {
+      if (!audioPlayerEl.duration) return;
+      const rect = hudProgressTrackEl.getBoundingClientRect();
+      const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      audioPlayerEl.currentTime = clickRatio * audioPlayerEl.duration;
+      renderTeleprompterFrame(audioPlayerEl.currentTime, audioPlayerEl.duration);
+    });
+
+    playPauseBtnEl.addEventListener("click", () => {
+      if (!audioPlayerEl.src) return;
+      if (audioPlayerEl.paused) {
+        audioPlayerEl.play();
+      } else {
+        audioPlayerEl.pause();
+      }
+    });
+
+    emphasisSelectEl.addEventListener("change", () => {
+      state.emphasis = emphasisSelectEl.value;
+      renderTeleprompterFrame(audioPlayerEl.currentTime || 0, audioPlayerEl.duration || 1);
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.isComposing) return;
+      const tag = (e.target?.tagName || "").toLowerCase();
+      if (e.code === "Space" && tag !== "textarea" && tag !== "input" && tag !== "select" && tag !== "button") {
+        if (audioPlayerEl.src) {
+          e.preventDefault();
+          if (audioPlayerEl.paused) audioPlayerEl.play();
+          else audioPlayerEl.pause();
+        }
+      }
+    });
+
+    textInputEl.addEventListener("keydown", (e) => {
+      if (e.isComposing) return;
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        speakFormEl.requestSubmit();
+      }
+    });
+
+    function appendLogLine(text, cls = "") {
+      const div = document.createElement("div");
+      div.className = `log-line ${cls}`.trim();
+      div.textContent = text;
+      terminalLogEl.appendChild(div);
+      terminalLogEl.scrollTop = terminalLogEl.scrollHeight;
+      return div;
+    }
+
+    let activeCrLineEl = null;
+
+    async function executeAndStream(payload) {
+      if (state.isRunning) return;
+      state.isRunning = true;
+      submitBtnEl.disabled = true;
+      activeCrLineEl = null;
+
+      try {
+        const resp = await fetch("/api/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok || !resp.body) {
+          appendLogLine(`HTTP Error: ${resp.status}`, "done-err");
+          return;
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || "";
+
+          for (const rawEv of events) {
+            const lines = rawEv.split("\n");
+            let evType = "message";
+            let dataStr = "";
+            for (const l of lines) {
+              if (l.startsWith("event:")) evType = l.slice(6).trim();
+              else if (l.startsWith("data:")) dataStr += l.slice(5).trim();
+            }
+            if (!dataStr) continue;
+            const data = JSON.parse(dataStr);
+
+            if (evType === "start") {
+              appendLogLine(`$ ${data.command}`, "cmd");
+            } else if (evType === "output") {
+              if (data.is_cr) {
+                if (!activeCrLineEl) {
+                  activeCrLineEl = appendLogLine(data.line, "cr");
+                } else {
+                  activeCrLineEl.textContent = data.line;
+                }
+              } else {
+                activeCrLineEl = null;
+                appendLogLine(data.line);
+              }
+            } else if (evType === "done") {
+              activeCrLineEl = null;
+              if (data.exit_code === 0) {
+                appendLogLine(`✓ Process exited with code 0`, "done-ok");
+                if (data.output) {
+                  setTeleprompterTranscript(
+                    data.output.transcript || textInputEl.value,
+                    data.output.voice
+                  );
+                  audioPlayerEl.src = data.output.url;
+                  audioPlayerEl.play().catch(() => {});
+                  await loadOutputs();
+                }
+              } else {
+                appendLogLine(`✗ Process exited with code ${data.exit_code}`, "done-err");
+              }
+            }
+          }
+        }
+      } catch (err) {
+        appendLogLine(`Stream Error: ${err.message}`, "done-err");
+      } finally {
+        state.isRunning = false;
+        submitBtnEl.disabled = false;
+      }
+    }
+
+    function populateVoicesForEngine(engineId) {
+      if (!state.schema) return;
+      voiceSelectEl.innerHTML = "";
+      const available = state.schema.personas.filter((p) =>
+        p.realizations.includes(engineId)
+      );
+
+      for (const p of available) {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = `${p.glyph} ${p.name} — ${p.style} (${p.intent})`;
+        if (p.id === state.selectedVoice) {
+          opt.selected = true;
+        }
+        voiceSelectEl.appendChild(opt);
+      }
+
+      if (voiceSelectEl.selectedIndex === -1 && available.length > 0) {
+        const riverOpt = available.find((p) => p.id === "river");
+        voiceSelectEl.value = riverOpt ? "river" : available[0].id;
+      }
+      updateVoiceHint();
+    }
+
+    function updateVoiceHint() {
+      if (!state.schema) return;
+      const vId = voiceSelectEl.value;
+      state.selectedVoice = vId;
+      const p = state.schema.personas.find((item) => item.id === vId);
+      if (p) {
+        const rDetail = p.realization_details?.[state.selectedEngine];
+        const rText = rDetail?.voice || JSON.stringify(rDetail || {});
+        voiceIntentHintEl.textContent = `${p.glyph} ${p.name} (${state.selectedEngine} → ${rText}): ${p.intent}`;
+        hudVoiceEl.textContent = p.name.toUpperCase();
+        hudVoiceEl.style.color = p.hex_color;
+      }
+    }
+
+    async function loadSchema() {
+      const resp = await fetch("/api/schema");
+      const schema = await resp.json();
+      state.schema = schema;
+
+      document.getElementById("schema-badge").textContent =
+        `${schema.engines.length} engines · ${schema.personas.length} personas`;
+
+      state.selectedEngine = schema.user_config?.engine || "kokoro";
+      state.selectedVoice = schema.user_config?.persona || "river";
+      if (schema.user_config?.emphasis) {
+        state.emphasis = schema.user_config.emphasis;
+        emphasisSelectEl.value = state.emphasis;
+      }
+
+      engineRadiosEl.innerHTML = "";
+      for (const eng of schema.engines) {
+        const label = document.createElement("label");
+        label.className = "choice-pill";
+        label.htmlFor = `eng-${eng.id}`;
+
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.id = `eng-${eng.id}`;
+        radio.name = "engine";
+        radio.value = eng.id;
+        if (eng.id === state.selectedEngine) radio.checked = true;
+
+        radio.addEventListener("change", () => {
+          state.selectedEngine = eng.id;
+          populateVoicesForEngine(eng.id);
+        });
+
+        const span = document.createElement("span");
+        span.textContent = `${eng.label} (${eng.id})`;
+        label.appendChild(radio);
+        label.appendChild(span);
+        engineRadiosEl.appendChild(label);
+      }
+
+      populateVoicesForEngine(state.selectedEngine);
+
+      audioTagsBarEl.innerHTML = "";
+      for (const tag of schema.help.audio_tags || []) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-chip";
+        btn.textContent = tag;
+        btn.addEventListener("click", () => {
+          const start = textInputEl.selectionStart || 0;
+          const end = textInputEl.selectionEnd || 0;
+          const val = textInputEl.value;
+          textInputEl.value = `${val.slice(0, start)}${tag} ${val.slice(end)}`;
+          textInputEl.focus();
+        });
+        audioTagsBarEl.appendChild(btn);
+      }
+
+      setTeleprompterTranscript(textInputEl.value, state.selectedVoice);
+    }
+
+    voiceSelectEl.addEventListener("change", updateVoiceHint);
+
+    speakFormEl.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const formErr = document.getElementById("form-error");
+      formErr.textContent = "";
+
+      const useClipboard = document.getElementById("flag-clipboard").checked;
+      const textVal = textInputEl.value.trim();
+      if (!useClipboard && !textVal) {
+        formErr.textContent = "Please enter prose text or enable Read Clipboard (-c).";
+        textInputEl.focus();
+        return;
+      }
+
+      const targetEl = document.querySelector('input[name="playback_target"]:checked');
+      executeAndStream({
+        mode: "narrate",
+        engine: state.selectedEngine,
+        voice: voiceSelectEl.value,
+        text: textVal,
+        clipboard: useClipboard,
+        raw: document.getElementById("flag-raw").checked,
+        playback_target: targetEl ? targetEl.value : "browser",
+      });
+    });
+
+    document.getElementById("quick-subcommands").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-subcmd]");
+      if (!btn) return;
+      const subArgs = btn.dataset.subcmd.split(/\s+/);
+      executeAndStream({
+        mode: "subcommand",
+        subcommand_args: subArgs,
+      });
+    });
+
+    document.getElementById("clear-log-btn").addEventListener("click", () => {
+      terminalLogEl.innerHTML = "";
+    });
+
+    async function loadOutputs() {
+      const resp = await fetch("/api/outputs");
+      const data = await resp.json();
+      outputsListEl.innerHTML = "";
+
+      if (!data.outputs || data.outputs.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "hint";
+        empty.textContent = "No .wav artifacts generated yet. Click 'Synthesize Speech' to create one.";
+        outputsListEl.appendChild(empty);
+        return;
+      }
+
+      for (const item of data.outputs) {
+        const card = document.createElement("div");
+        card.className = "output-card";
+
+        const header = document.createElement("div");
+        header.className = "output-card-header";
+
+        const titleSpan = document.createElement("span");
+        titleSpan.style.color = "var(--text-bright)";
+        titleSpan.textContent = `${item.filename} (${item.duration_seconds}s · ${(item.size_bytes / 1024).toFixed(1)} KB)`;
+
+        const metaSpan = document.createElement("span");
+        metaSpan.className = "hint";
+        metaSpan.textContent = `${item.voice ? item.voice.toUpperCase() + " · " : ""}${item.created_at}`;
+
+        header.appendChild(titleSpan);
+        header.appendChild(metaSpan);
+        card.appendChild(header);
+
+        if (item.transcript) {
+          const tr = document.createElement("div");
+          tr.className = "output-transcript";
+          tr.textContent = item.transcript;
+          card.appendChild(tr);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "output-actions";
+
+        const loadBtn = document.createElement("button");
+        loadBtn.type = "button";
+        loadBtn.className = "btn-chip";
+        loadBtn.textContent = "▶ Load in Teleprompter";
+        loadBtn.addEventListener("click", () => {
+          if (item.transcript) {
+            textInputEl.value = item.transcript;
+            setTeleprompterTranscript(item.transcript, item.voice || state.selectedVoice);
+          }
+          audioPlayerEl.src = item.url;
+          audioPlayerEl.play();
+        });
+
+        const dlLink = document.createElement("a");
+        dlLink.href = item.url;
+        dlLink.download = item.filename;
+        dlLink.style.color = "var(--text-soft)";
+        dlLink.style.fontSize = "0.82rem";
+        dlLink.style.fontFamily = "var(--font-mono)";
+        dlLink.textContent = "⬇ Download WAV";
+
+        actions.appendChild(loadBtn);
+        actions.appendChild(dlLink);
+        card.appendChild(actions);
+
+        outputsListEl.appendChild(card);
+      }
+    }
+
+    document.getElementById("refresh-outputs-btn").addEventListener("click", loadOutputs);
+
+    loadSchema();
+    loadOutputs();
+  </script>
+</body>
+</html>

@@ -16,23 +16,62 @@ cp speak/speak ~/.local/bin/speak
 chmod +x ~/.local/bin/speak
 ```
 
+### Homebrew Conflict (`espeak-ng`)
+
+If you have Homebrew's `espeak-ng` installed, it links its own `speak` binary into `/opt/homebrew/bin/speak`. If Homebrew comes before `~/.local/bin` in your `$PATH`, running `speak` will execute `espeak-ng` instead of this driver, throwing:
+```
+Error: The specified espeak-ng voice does not exist.
+```
+
+To ensure `speak` always resolves to this persona driver across all directories:
+1. **Shell Alias (Recommended):** Add to `~/.zshrc`:
+   ```bash
+   alias speak="$HOME/Projects/speak/speak"
+   ```
+2. **Symlink into Homebrew:**
+   ```bash
+   ln -sf "$HOME/Projects/speak/speak" /opt/homebrew/bin/speak
+   ```
+
 ### Dependencies
 
 - `bash` 4+
 - `curl`
-- `python3` (for JSON handling)
+- `python3` (for JSON handling and local adapters)
 - `ffmpeg` / `ffprobe` (audio conversion)
 - A Gemini API key — get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- (Optional) An OpenRouter API key if you want to use OpenRouter models for narration optimization.
+- (Optional) For offline local Kokoro TTS: `pip3 install kokoro-onnx soundfile`
+- (Optional) For offline local Suno Bark TTS: `pip3 install transformers torch soundfile scipy`
 
 ```bash
 export GEMINI_API_KEY="your-key-here"
+# Optional:
+export OPENROUTER_API_KEY="your-openrouter-key"
 ```
+
+## Engines
+
+`speak` supports 4 text-to-speech engines:
+
+| Engine | Deployment | Audio Tags | Description |
+|---|---|---|---|
+| `gemini` | Cloud API | Yes | Google Gemini 3.1 Flash TTS — rich expressive delivery directed by Gemini |
+| `gcloud` | Cloud API | No | Google Cloud Text-to-Speech Chirp 3 HD — studio-grade voices |
+| `kokoro` | Offline local | No | Kokoro 82M v1.0 — ultra-fast local neural TTS with persona voice blending |
+| `bark` | Offline local | Yes | Suno Bark — generative neural audio with expressive prosody and native audio tags |
 
 ## Usage
 
 ```bash
-# Speak text directly
+# Speak text directly (default: gemini)
 speak "Information has shape, and the shape persists across substrate."
+
+# Speak using offline Suno Bark with native audio tags
+speak -e bark "That is hilarious [laughs] I can't believe it."
+
+# Speak using offline Kokoro TTS
+speak -e kokoro "Offline speech synthesis without an API key."
 
 # Speak clipboard contents
 speak -c
@@ -60,6 +99,27 @@ speak -r --stdout "hello" | mpv -
 speak --json "some text" | jq .duration_seconds
 speak -r --json "text" | jq -r .audio_wav_base64 | base64 -d > out.wav
 ```
+
+## Fast Local Responses (`speak daemon`)
+
+When running offline models (Kokoro or Bark), `speak` can keep the model weights resident in Apple Silicon unified memory to eliminate cold startup delays:
+
+```bash
+speak daemon start all          # Pre-load Kokoro & Bark into memory
+speak daemon status             # View memory residency and daemon status
+speak daemon stop all           # Unload models and free memory
+```
+
+- **Visual Indicator**: `speak` shows `(daemon)` in the voice badge when synthesizing with a warm resident daemon, or `(standalone)` if the model is being loaded from disk.
+- **Resident Daemon Prompt**: After running a local model standalone, `speak` can ask if you'd like to load the daemon in the background for faster responses.
+- **Config Setting**: Toggle this prompt on/off with:
+  ```bash
+  speak set daemon_prompt false   # Disable post-run prompt
+  speak set daemon_prompt true    # Enable post-run prompt (default)
+  ```
+  Responding `never` to the interactive prompt also disables it automatically.
+
+With the daemon active, speech synthesis starts almost instantly. If the daemon is stopped, `speak` automatically falls back to standard execution without errors.
 
 ## Long text and chunking
 
@@ -144,14 +204,17 @@ Tags are not limited to this list. The model interprets natural language, so `[l
 Config lives at `~/.config/speak/config`:
 
 ```ini
-voice=Puck
-tts_model=gemini-3.1-flash-tts-preview
-optimize_model=gemini-2.5-flash
+engine=gemini
+persona=puck
+optimizer_provider=gemini
+optimizer_model=gemini-2.5-flash
 ```
 
 ```bash
-speak set                    # view current config
-speak set voice Charon       # change default voice
+speak set                                      # view current config
+speak set persona Kore                         # change default persona
+speak set optimizer_provider openrouter        # switch to OpenRouter optimizer
+speak set optimizer_model openrouter/free      # use free OpenRouter model
 ```
 
 ## How it works
@@ -163,21 +226,65 @@ speak set voice Charon       # change default voice
 
 Skip step 1 with `-r` if your text is already tagged or you want the model's default interpretation.
 
-## Terminal output
+## Terminal output & Tactical HUD
 
-`speak` shows a formatted summary while it works:
+`speak` provides real-time visual feedback and an interactive sci-fi HUD in the terminal:
 
+### 1. Live Synthesis Indicator
+While audio is preparing, a compact, non-wrapping progress sweep reports live word count and elapsed deciseconds:
 ```
-speak v0.1.0
-  voice  ◈ Kore
-  ──────────────────────────────────
-  [serious] Information has topological properties...
-  ──────────────────────────────────
-  duration  12s    tokens  opt:142/89 tts:89/1240
-  ✓ done
+  ⚙ SYNTHESIZING [▱▱▰▰▱▱▱▱] 482 words (0.8s)
 ```
 
-Token counts are shown as `prompt/completion` for both the optimization and TTS calls.
+### 2. Audio Telemetry & Closed Captioning
+During playback, `speak` renders a borderless, adaptive teleprompter that auto-scales to any terminal width (including thin split panes) with zero scrollback leak:
+
+```
+  All systems nominal, captain.
+  Visual telemetry is online and orbit is established.
+  Primary sensors are holding at maximum efficiency.
+
+  RIVER  ● PLAY [████████░░] [━━━━━━━━━╸──────] 53% 01:23 / 02:35
+```
+
+* **Borderless & Window-Adaptive:** No rigid box frames or wrapping sidebars; scales cleanly to narrow windows and split panes.
+* **Colored Voice Telemetry Badge:** Displays the active voice name in its deterministic 256-color badge right before `● PLAY` on the bottom status line.
+* **Steady Playback Beacon:** `● PLAY` stays steady throughout speech without distracting word-to-word state flickering, returning to `○ IDLE` only on long silence (`> 600ms`).
+* **Signal VU Meter:** Acoustic amplitude bar reflecting real decibel volume in 50ms time slices.
+* **Progress Track:** Determinate progress bar showing percentage, elapsed time, and total audio duration.
+* **Configurable Active Word Emphasis:** Default active word styling is bold electric cyan (`emphasis=bold`). Customize via:
+  ```bash
+  speak set emphasis bold        # Bold only (default)
+  speak set emphasis underline   # Underline only
+  speak set emphasis both        # Bold + underline
+  speak set emphasis inverse     # High-contrast inverted pill
+  ```
+* **Full Scroll View & Window View (`speak set view scroll|window`):**
+  * `--view scroll` / `speak set view scroll` (default): **Full Scroll View** using the terminal's native scrollback. As each line completes, it is permanently printed into the terminal history above the live active line and bottom telemetry bar so you can scroll up at any time.
+  * `--view window` / `speak set view window`: Fixed `-l N` (1 to 8 lines, default: `3`) in-place teleprompter window.
+* **Sample-Accurate Per-Clause Timing & Markdown Normalization (Kokoro):**
+  * Automatically strips Markdown syntax (`***`, `**bold**`, `# Headings`, `[links](url)`, tables, and backticks) so TTS never reads formatting symbols (`"asterisk asterisk asterisk"`) aloud.
+  * Synthesizes clause-by-clause and writes `<output>.timing.json` with exact sample-level `[start, speech_end, end]` timestamps (`len(audio_part) / 24000.0`), locking the visual word highlight to the audio with zero cumulative drift.
+* **Closed Captioning / Lyric Scrolling:**
+  * `-l, --lines N`: Set visible caption lines in `window` mode (1 to 8, default: `3`).
+  * `--highlight word | line`: Choose between word-by-word karaoke style (default) or line-by-line illumination.
+  * `--lead MS`: Caption anticipation lead time in milliseconds before speech (default: `65`).
+  * **Monochromatic Cyan Gradient:** Single hue only; the spoken line is electric cyan, stepping down in pure cyan luminance (84%, 67%, 51%, 37%) so visual attention is never distracted by conflicting colors.
+* **Terminal Tab Title:** Updates the IDE terminal tab title via OSC (`VOICE: <VOICE>`) and clears on completion.
+
+## Non-Invasive Web Front-End Sidecar (`web_ui.py`)
+
+`speak` includes a self-contained, zero-build 2-file Web UI sidecar (`web_ui.py` + `static/index.html`) that wraps the CLI without modifying a single line of CLI logic:
+
+```bash
+python3 web_ui.py
+# Open http://127.0.0.1:8420
+```
+
+- **Introspection (`GET /api/schema`):** Parses `./speak --help`, `voices.yaml`, `engines.yaml`, and `~/.config/speak/config` in read-only mode to dynamically populate subcommands, flags, engines, and 30+ voices.
+- **Live SSE Execution (`POST /api/run`):** Spawns `./speak` via `asyncio.create_subprocess_exec` (never `shell=True`) and streams real-time stdout/stderr telemetry and ANSI status updates to the browser over Server-Sent Events (`text/event-stream`).
+- **Artifact & Output Browser (`GET /api/outputs`):** Lists and streams generated `.wav` artifacts from `outputs/` and the workspace with embedded HTML5 audio players.
+- **Theme Switcher:** Toggle instantly between **◇ Lothal Astromech** (warm obsidian & cyan HUD) and **🕹️ 1984 Vector Arcade** (CRT phosphor scanlines, neon magenta/cyan vector borders, and arcade high-score styling).
 
 ## Platform support
 

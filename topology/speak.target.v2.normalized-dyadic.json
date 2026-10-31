@@ -1,0 +1,2579 @@
+{
+  "metadata": {
+    "format": "normalized-dyadic",
+    "flavor": "dyadic-projection-from-hypergraph",
+    "i2t:relation_to_canonical": "dyadic-projection",
+    "originalCounts": {
+      "nodes": 61,
+      "edges": 62,
+      "incidences": 192
+    },
+    "source-metadata": {
+      "topothink-version": "0.1",
+      "format": "hypergraph",
+      "kind": "target-spec",
+      "version": 2,
+      "supersedes": "speak.target.v1.hypergraph.topothink.json",
+      "description": "Hardened target topology for the speak rewrite. Produced by an adversarial judge-panel (6 lenses \u2192 per-finding skeptic verification \u2192 synthesis): 50 findings, 41 survived majority refutation, 9 killed. v2 corrects v1's own errors (dropped blend-composition edge, over-reified sc:synthesize, speculative capability:streaming) and pins the schemas, migration, and CLI surface that v1 left as prose.",
+      "source": "designed 2026-05-26; critique workflow wf_417e15fc-5a8 over speak @ 1a6c901 + uncommitted",
+      "extractor": "claude (claude-opus-4-8) main-loop synthesis of 41 verified panel findings",
+      "lineage": "audit.v1 (current state) \u2192 target.v1 (first redesign) \u2192 target.v2 (panel-hardened)",
+      "key-design-moves": [
+        "PERSONA / REALIZATION split, now i2t-faithful: a persona (engine-agnostic casting intent) has a realization ONLY where voices.yaml declares one. Absence of an engine key = the persona is honestly unavailable in that engine. There is NO fallback key and NO default realization, so leak #1 (voice-identity erasure) is structurally impossible, not policy-prevented.",
+        "REALIZATION is typed: realization-kind \u2208 {named, blend, cloned, parametric}. A blend (e.g. 0.5 am_adam + 0.5 am_michael) is a first-class realization carrying component/weight structure \u2014 NOT a persona. The audit's i:blend-composition edge, which v1 wrongly dropped, is restored.",
+        "sc:resolve-voice is the binding event (persona + active-engine \u2192 resolved realization) that the audit had only implicitly. i:driver-reports-realization forces the on-screen badge to name the realization ACTUALLY rendered \u2014 this is the single change that kills the lying-badge bug. v1 fixed the data model but never wired the display, so it only relocated the lie.",
+        "ENGINE is a single config value (gemini|gcloud|kokoro). Mutual exclusion becomes impossible by construction \u2014 the -g/-k/-f/--no-gcloud guard triangle is deleted.",
+        "OPTIMIZER is a top-level concern, not an engine TTS model: it EMITS the audio-tags vocabulary; engines that CONSUME it list audio-tags in their capabilities. optimize fires iff (active engine lists audio-tags) AND (its own Gemini auth is satisfiable). Under kokoro the optimizer is skipped \u2192 genuinely offline by default.",
+        "Three synthesize edges (per-engine, n-ary over text/engine/model/realization/output) \u2014 NOT one positional-role edge. Polymorphism lives in the i:driver-calls-adapter-* dispatch edges. This is the i2t-faithful reading the panel preferred over v1's single edge.",
+        "CHUNKING is engine-agnostic and feeds synthesis through a shared data node (state:chunk-list), not an edge-to-edge 'feeds' incidence. Concurrency is data (policy:concurrency): cloud engines bounded-parallel (default 3), kokoro serial (1) \u2014 replacing the hardcoded batch_size=3.",
+        "STRANGLER refactor, not greenfield rewrite: the current 939-line driver is evolved in place; only the synth bodies are extracted into adapters (sc:extract-adapters records the provenance). Honors 'never rewrite' structurally.",
+        "DATA out of CODE with a fail-loud validation gate: voices.yaml + engines.yaml are validated against schemas at load; any unknown engine/persona/capability/blend-voice/model errors and exits nonzero. The driver MUST NOT contain a 'default realization' or 'nearest-voice' path."
+      ],
+      "language-decision": "bash driver + bash cloud adapters (engines/gemini.sh, engines/gcloud.sh; curl-based, python3 only as a JSON/numeric helper) + python kokoro adapter (engines/kokoro.py, evolved from kokoro_tts.py). No venv unless engine=kokoro. The adapter contract is language-agnostic: a .sh and a .py adapter satisfy the same text+realization-id \u2192 wav+sidecars invocation convention.",
+      "voices-yaml-schema": {
+        "_doc": "personas keyed by lowercase id; realizations keyed by ENGINE config-value; a realization is present IFF its engine key exists (no fallback, no default realization). Blend = list of {voice, weight}. Single-voice kokoro realization = {voice: X}. Schema allows EITHER {voice} OR {blend} under kokoro, never both.",
+        "default_persona": "puck",
+        "example": {
+          "puck": {
+            "intent": "upbeat male",
+            "style": "Upbeat",
+            "glyph": "\u25c6",
+            "color": 33,
+            "default": true,
+            "realizations": {
+              "gemini": {
+                "voice": "Puck"
+              },
+              "gcloud": {
+                "voice": "en-US-Chirp3-HD-Puck",
+                "language_code": "en-US"
+              },
+              "kokoro": {
+                "blend": [
+                  {
+                    "voice": "am_adam",
+                    "weight": 0.5
+                  },
+                  {
+                    "voice": "am_michael",
+                    "weight": 0.5
+                  }
+                ]
+              }
+            }
+          },
+          "sulafat": {
+            "intent": "warm female",
+            "style": "Warm",
+            "realizations": {
+              "gemini": {
+                "voice": "Sulafat"
+              },
+              "gcloud": {
+                "voice": "en-US-Chirp3-HD-Sulafat",
+                "language_code": "en-US"
+              }
+            }
+          }
+        },
+        "note": "voices.yaml enumerates ALL 30 personas explicitly. The 9 currently-mapped personas get their kokoro realization from kokoro_tts.py's mappings (puck\u2192blend, charon\u2192am_michael, kore\u2192am_michael, zephyr\u2192am_adam, fenrir\u2192am_adam, leda\u2192af_bella, orus\u2192am_michael, aoede\u2192af_sarah, callirrhoe\u2192af_sky); the other 21 OMIT the kokoro key (honestly unavailable offline)."
+      },
+      "engines-yaml-schema": {
+        "_doc": "engines keyed by config-value. 'capabilities' is the single source of truth the optimizer-gating edge reads. Optimizer is declared top-level, not under an engine.",
+        "per_engine_fields": [
+          "label",
+          "deployment",
+          "auth",
+          "capabilities",
+          "default_model",
+          "models",
+          "endpoint",
+          "output_format(pcm-s16le-24k-mono|linear16|wav)",
+          "needs_transcode(bool)",
+          "voice_prefix(string|null)",
+          "default_language_code",
+          "billing_unit(tokens|characters|none)",
+          "max_in_flight(int)",
+          "default_persona",
+          "preconditions"
+        ],
+        "optimizer_section": {
+          "model": "gemini-2.5-flash",
+          "auth": "gemini-api-key",
+          "provides_capability": "audio-tags"
+        },
+        "kokoro_native_voices_carry": "language_code per voice (am_adam: en-us, bm_george: en-gb, ...) \u2014 kills the bf_/bm_ string-prefix inference."
+      },
+      "config-migration": {
+        "_doc": "runs once, writes new config, errors on any unmappable value (never drops).",
+        "use_gcloud=true": "engine: gcloud",
+        "use_gcloud=false": "engine: gemini",
+        "voice=Puck": "persona: puck (lowercase-normalize; FAIL if no matching persona)",
+        "tts_model=X": "model_overrides: {gemini: X}",
+        "optimize_model=X": "optimizer_model: X (top-level)",
+        "new_keys": [
+          "engine",
+          "persona",
+          "model_overrides (engine\u2192model map)",
+          "optimizer_model"
+        ],
+        "model_selection_precedence": "--model flag > config model_overrides[engine] > engines.yaml models.default; --model takes a KEY (e.g. 'fast') or literal id, validated against that engine's models."
+      },
+      "decisions-pending-user-confirmation": {
+        "_doc": "v2 bakes in the recommended default for each; flagged here for the review gate. Override any and I re-emit v2.",
+        "missing-realization": "DEFAULT: hard error, exit nonzero, never substitute; show which engines DO realize the persona. Optional --nearest flag as documented opt-in; when used, the badge MUST report the substitution.",
+        "command-name": "DEFAULT: keep 'speak' (installed at /opt/homebrew/bin/speak, documented in services-registry).",
+        "wrangler-disposition": "DEFAULT: omit from this graph \u2014 Cloudflare Workers is a DEPLOYMENT target, not a TTS engine; the .wrangler/ cache is a separate decision (keep/remove/promote-to-4th-engine).",
+        "kokoro-puck-casting": "DEFAULT: keep the am_adam+am_michael 0.5/0.5 blend; flagged for Harold to confirm by ear or re-cast to a better-matching native voice.",
+        "blend-weight-normalization": "DEFAULT: auto-normalize weights (forgiving); alternative is reject-if-not-sum-1.",
+        "chirp3-name-coverage": "BUILD-TIME TODO: verify each en-US-Chirp3-HD-{name} against the live Chirp3 voice list before baking into voices.yaml; omit any that 404 (avoid silent-failure-deferred-to-runtime).",
+        "kokoro-concurrency": "DEFAULT: per-engine max_in_flight in engines.yaml; kokoro=1 (serial), cloud=3.",
+        "kokoro-offline-default": "DEFAULT: optimizer skipped under kokoro (no audio-tags capability) \u2192 no GEMINI_API_KEY required for a bare kokoro run. This is a deliberate behavior CHANGE from current (kokoro-without-raw still hits Gemini today)."
+      },
+      "anti-reification-discipline": "A capability node is justified ONLY when at least one engine has a verified has-capability edge to it AND the source consumes it (audio-tags qualifies: Gemini consumes [tags] as prosody at speak.sh L613-623; streaming did not, so it is removed). persona/realization/contract:adapter/policy/concept nodes are reified because the design and help text treat each as a named, addressable thing. sc:resolve-voice and sc:resolve-voice-fails are reified state_change events because the binding/failure is a talkable occurrence the UX reports. sc:synthesize is NOT reified (v1's error, corrected): chunk and synthesize are both state_change edges sharing the state:chunk-list data node \u2014 the canonical i2t pipeline pattern.",
+      "what-this-graph-deliberately-omits": [
+        "concept:narration-intelligence (audit) \u2014 subsumed: it was the named effect of sc:optimize applying capability:audio-tags; the optimize+capability pair now carries the meaning.",
+        "commit/history nodes \u2014 this is a target state, not a diff.",
+        ".wrangler/ exploration \u2014 separate deployment decision (see decisions-pending).",
+        "the full 30-persona enumeration \u2014 4 representatives (puck, charon, leda, sulafat) illustrate the pattern; voices.yaml holds all 30.",
+        "engine-availability cross-fallback \u2014 explicitly NOT proposed (would resurrect leak #1); only honest readiness REPORTING via preconditions."
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "project:speak",
+      "kind": "node",
+      "attrs": {
+        "label": "speak (project root)",
+        "i2t:kind": "artifact"
+      },
+      "label": "speak (project root)"
+    },
+    {
+      "id": "artifact:driver",
+      "kind": "node",
+      "attrs": {
+        "label": "speak (CLI driver)",
+        "i2t:kind": "artifact",
+        "role": "evolved-in-place from the current 939-line driver \u2014 orchestration preserved, only synth bodies extracted into adapters",
+        "language": "bash"
+      },
+      "label": "speak (CLI driver)"
+    },
+    {
+      "id": "artifact:speak-v1",
+      "kind": "node",
+      "attrs": {
+        "label": "speak (current 939-line script)",
+        "i2t:kind": "artifact",
+        "role": "strangler-refactor origin / provenance"
+      },
+      "label": "speak (current 939-line script)"
+    },
+    {
+      "id": "artifact:voices-yaml",
+      "kind": "node",
+      "attrs": {
+        "label": "voices.yaml",
+        "i2t:kind": "artifact",
+        "role": "source of truth for persona identity + per-engine realizations + default_persona",
+        "status": "to-be-created"
+      },
+      "label": "voices.yaml"
+    },
+    {
+      "id": "artifact:engines-yaml",
+      "kind": "node",
+      "attrs": {
+        "label": "engines.yaml",
+        "i2t:kind": "artifact",
+        "role": "engine capabilities, models, auth, output-format, billing-unit, max_in_flight, default_persona, preconditions; top-level optimizer section",
+        "status": "to-be-created"
+      },
+      "label": "engines.yaml"
+    },
+    {
+      "id": "artifact:voices-schema",
+      "kind": "node",
+      "attrs": {
+        "label": "voices.schema (JSON Schema or in-driver validator)",
+        "i2t:kind": "artifact",
+        "role": "fail-loud validation of voices.yaml"
+      },
+      "label": "voices.schema (JSON Schema or in-driver validator)"
+    },
+    {
+      "id": "artifact:engines-schema",
+      "kind": "node",
+      "attrs": {
+        "label": "engines.schema",
+        "i2t:kind": "artifact",
+        "role": "fail-loud validation of engines.yaml"
+      },
+      "label": "engines.schema"
+    },
+    {
+      "id": "artifact:adapter-gemini",
+      "kind": "node",
+      "attrs": {
+        "label": "engines/gemini.sh",
+        "i2t:kind": "artifact",
+        "language": "bash",
+        "guarantees": "transcodes Gemini PCM s16le 24k mono \u2192 WAV via ffmpeg",
+        "status": "extracted-from-driver"
+      },
+      "label": "engines/gemini.sh"
+    },
+    {
+      "id": "artifact:adapter-gcloud",
+      "kind": "node",
+      "attrs": {
+        "label": "engines/gcloud.sh",
+        "i2t:kind": "artifact",
+        "language": "bash",
+        "guarantees": "decodes Chirp3 LINEAR16 base64 \u2192 WAV",
+        "status": "extracted-from-driver"
+      },
+      "label": "engines/gcloud.sh"
+    },
+    {
+      "id": "artifact:adapter-kokoro",
+      "kind": "node",
+      "attrs": {
+        "label": "engines/kokoro.py",
+        "i2t:kind": "artifact",
+        "language": "python",
+        "guarantees": "writes WAV via soundfile; offline",
+        "status": "evolved-from-kokoro_tts.py"
+      },
+      "label": "engines/kokoro.py"
+    },
+    {
+      "id": "artifact:config-file",
+      "kind": "node",
+      "attrs": {
+        "label": "~/.config/speak/config",
+        "i2t:kind": "artifact",
+        "keys": [
+          "engine",
+          "persona",
+          "model_overrides",
+          "optimizer_model"
+        ]
+      },
+      "label": "~/.config/speak/config"
+    },
+    {
+      "id": "state:chunk-list",
+      "kind": "node",
+      "attrs": {
+        "label": "chunk list (ordered text chunks)",
+        "i2t:kind": "data-artifact",
+        "role": "shared node: sc:chunk produces, sc:synthesize-* consume \u2014 the i2t pipeline pattern that replaces edge-to-edge feeds"
+      },
+      "label": "chunk list (ordered text chunks)"
+    },
+    {
+      "id": "state:wav-chunks",
+      "kind": "node",
+      "attrs": {
+        "label": "ordered WAV chunks + per-chunk .err/.tokens sidecars",
+        "i2t:kind": "data-artifact",
+        "role": "synthesize produces, concat consumes; partial-failure tolerant"
+      },
+      "label": "ordered WAV chunks + per-chunk .err/.tokens sidecars"
+    },
+    {
+      "id": "state:persona-unrealized",
+      "kind": "node",
+      "attrs": {
+        "label": "persona-unrealized-in-engine",
+        "i2t:kind": "state",
+        "role": "resolution-failure state when active engine has no realization for the requested persona"
+      },
+      "label": "persona-unrealized-in-engine"
+    },
+    {
+      "id": "contract:adapter",
+      "kind": "node",
+      "attrs": {
+        "label": "adapter contract",
+        "i2t:kind": "contract",
+        "reification-justification": "the design treats 'the adapter contract' as a named, talkable thing",
+        "clauses": {
+          "input": "{chunk-text, realization-id}",
+          "output": "playable WAV at the engine's stable format (adapter normalizes, never emits raw PCM)",
+          "sidecar": "{tokens-line, .err on failure}",
+          "semantics": "nonzero return on failure WITHOUT aborting the parent process; order-preserving; idempotent"
+        }
+      },
+      "label": "adapter contract"
+    },
+    {
+      "id": "engine:gemini",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini Native TTS",
+        "i2t:kind": "engine",
+        "config-value": "gemini",
+        "selected-by": "--engine gemini",
+        "deployment": "cloud-api",
+        "output-format": "pcm-s16le-24k-mono",
+        "needs-transcode": true,
+        "billing-unit": "tokens",
+        "max-in-flight": 3
+      },
+      "label": "Gemini Native TTS"
+    },
+    {
+      "id": "engine:gcloud-chirp3",
+      "kind": "node",
+      "attrs": {
+        "label": "Google Cloud Chirp 3 HD",
+        "i2t:kind": "engine",
+        "config-value": "gcloud",
+        "selected-by": "--engine gcloud",
+        "deployment": "cloud-api",
+        "output-format": "linear16",
+        "needs-transcode": false,
+        "voice-prefix": "en-US-Chirp3-HD-",
+        "default-language-code": "en-US",
+        "billing-unit": "characters",
+        "project-fallback": "g-drive-474022",
+        "max-in-flight": 3
+      },
+      "label": "Google Cloud Chirp 3 HD"
+    },
+    {
+      "id": "engine:kokoro",
+      "kind": "node",
+      "attrs": {
+        "label": "Kokoro Local",
+        "i2t:kind": "engine",
+        "config-value": "kokoro",
+        "selected-by": "--engine kokoro",
+        "deployment": "offline-local",
+        "output-format": "wav",
+        "needs-transcode": false,
+        "billing-unit": "none",
+        "max-in-flight": 1
+      },
+      "label": "Kokoro Local"
+    },
+    {
+      "id": "capability:audio-tags",
+      "kind": "node",
+      "attrs": {
+        "label": "audio-tags vocabulary capability",
+        "i2t:kind": "capability",
+        "capability-kind": "reference-input",
+        "members": [
+          "[whispers]",
+          "[excited]",
+          "[serious]",
+          "[warmly]",
+          "[slowly]",
+          "[laughs]",
+          "[sighs]",
+          "[pause]",
+          "[shouting]",
+          "[sarcastic]"
+        ],
+        "consumed-by": "engine:gemini (prosody control, speak L613-623)",
+        "gcloud-status": "NOT held: Chirp3 ingests text as plain input.text and cannot interpret bracket tags \u2014 optimization would be wasted spend AND audio degradation, so skipped.",
+        "kokoro-status": "NOT held: skipped \u2192 offline by default."
+      },
+      "label": "audio-tags vocabulary capability"
+    },
+    {
+      "id": "policy:missing-realization",
+      "kind": "node",
+      "attrs": {
+        "label": "missing-realization policy",
+        "i2t:kind": "policy",
+        "decided-behavior": "error with actionable message naming which engines DO realize this persona; exit nonzero; never substitute. Optional --nearest opt-in only when the user asks, and then the badge reports the substitution."
+      },
+      "label": "missing-realization policy"
+    },
+    {
+      "id": "policy:concurrency",
+      "kind": "node",
+      "attrs": {
+        "label": "synthesis concurrency policy",
+        "i2t:kind": "policy",
+        "rule": "per-engine max_in_flight from engines.yaml; cloud bounded-parallel (default 3, respects API rate limits); kokoro serial (1, local CPU/GPU-bound). Replaces hardcoded batch_size=3."
+      },
+      "label": "synthesis concurrency policy"
+    },
+    {
+      "id": "concept:persona-is-intent-not-timbre",
+      "kind": "node",
+      "attrs": {
+        "label": "persona = casting intent, not a fixed timbre",
+        "i2t:kind": "concept",
+        "reification-justification": "named in help/README",
+        "statement": "A persona is a casting intent (e.g. 'upbeat male'). Each engine realizes it with its best-matching voice; the same persona can sound different across engines \u2014 a documented, predictable contract, not a silent substitution."
+      },
+      "label": "persona = casting intent, not a fixed timbre"
+    },
+    {
+      "id": "concept:coverage-invariants",
+      "kind": "node",
+      "attrs": {
+        "label": "coverage invariants",
+        "i2t:kind": "concept",
+        "reification-justification": "named doc/section + speak doctor target",
+        "invariants": [
+          "every engine's default persona has a realization in that engine",
+          "every realization label is a string the adapter will actually request",
+          "audio-tags claimed only by engines whose adapter consumes tags"
+        ]
+      },
+      "label": "coverage invariants"
+    },
+    {
+      "id": "concept:engine-readiness",
+      "kind": "node",
+      "attrs": {
+        "label": "engine readiness (deferred)",
+        "i2t:kind": "concept",
+        "deferred": true,
+        "note": "engines.yaml carries per-engine preconditions (env var | binary on PATH | model file | token obtainable); driver evaluates them for honest reporting (future 'speak engines'). NOT cross-engine fallback."
+      },
+      "label": "engine readiness (deferred)"
+    },
+    {
+      "id": "model:gemini-tts-default",
+      "kind": "node",
+      "attrs": {
+        "label": "gemini-3.1-flash-tts-preview",
+        "i2t:kind": "model",
+        "cli-flag": "--model default",
+        "used-by": "engine:gemini"
+      },
+      "label": "gemini-3.1-flash-tts-preview"
+    },
+    {
+      "id": "model:gemini-tts-fast",
+      "kind": "node",
+      "attrs": {
+        "label": "gemini-2.5-flash-preview-tts",
+        "i2t:kind": "model",
+        "cli-flag": "--model fast (absorbs legacy --fast)",
+        "used-by": "engine:gemini"
+      },
+      "label": "gemini-2.5-flash-preview-tts"
+    },
+    {
+      "id": "model:gemini-optimizer",
+      "kind": "node",
+      "attrs": {
+        "label": "gemini-2.5-flash (text mode)",
+        "i2t:kind": "model",
+        "config-key": "optimizer.model",
+        "not-a-tts-model": true,
+        "role": "narration-director LLM; EMITS the audio-tags vocabulary"
+      },
+      "label": "gemini-2.5-flash (text mode)"
+    },
+    {
+      "id": "model:kokoro",
+      "kind": "node",
+      "attrs": {
+        "label": "kokoro-v1.0.onnx + voices-v1.0.bin",
+        "i2t:kind": "model",
+        "deployment": "local-file",
+        "stored-at": "~/.config/speak/models/",
+        "download-base": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+      },
+      "label": "kokoro-v1.0.onnx + voices-v1.0.bin"
+    },
+    {
+      "id": "service:gemini-api",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini API",
+        "i2t:kind": "external-service",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models"
+      },
+      "label": "Gemini API"
+    },
+    {
+      "id": "service:gcloud-tts-api",
+      "kind": "node",
+      "attrs": {
+        "label": "Google Cloud Text-to-Speech API",
+        "i2t:kind": "external-service",
+        "endpoint": "https://texttospeech.googleapis.com/v1/text:synthesize"
+      },
+      "label": "Google Cloud Text-to-Speech API"
+    },
+    {
+      "id": "auth:gemini-api-key",
+      "kind": "node",
+      "attrs": {
+        "label": "GEMINI_API_KEY env var",
+        "i2t:kind": "auth-method"
+      },
+      "label": "GEMINI_API_KEY env var"
+    },
+    {
+      "id": "auth:gcloud-oauth",
+      "kind": "node",
+      "attrs": {
+        "label": "gcloud OAuth application-default",
+        "i2t:kind": "auth-method"
+      },
+      "label": "gcloud OAuth application-default"
+    },
+    {
+      "id": "auth:none",
+      "kind": "node",
+      "attrs": {
+        "label": "(no authentication required)",
+        "i2t:kind": "auth-method"
+      },
+      "label": "(no authentication required)"
+    },
+    {
+      "id": "tool:ffmpeg",
+      "kind": "node",
+      "attrs": {
+        "label": "ffmpeg",
+        "i2t:kind": "external-tool",
+        "roles": "PCM\u2192WAV transcode (gemini adapter only) + WAV concat (driver)"
+      },
+      "label": "ffmpeg"
+    },
+    {
+      "id": "tool:ffprobe",
+      "kind": "node",
+      "attrs": {
+        "label": "ffprobe",
+        "i2t:kind": "external-tool"
+      },
+      "label": "ffprobe"
+    },
+    {
+      "id": "tool:ffplay",
+      "kind": "node",
+      "attrs": {
+        "label": "ffplay",
+        "i2t:kind": "external-tool",
+        "role": "--show wave|spec"
+      },
+      "label": "ffplay"
+    },
+    {
+      "id": "tool:audio-player",
+      "kind": "node",
+      "attrs": {
+        "label": "afplay / paplay / aplay / mpv",
+        "i2t:kind": "external-tool"
+      },
+      "label": "afplay / paplay / aplay / mpv"
+    },
+    {
+      "id": "tool:clipboard",
+      "kind": "node",
+      "attrs": {
+        "label": "pbpaste / xclip / xsel / wl-paste",
+        "i2t:kind": "external-tool"
+      },
+      "label": "pbpaste / xclip / xsel / wl-paste"
+    },
+    {
+      "id": "tool:espeak-ng",
+      "kind": "node",
+      "attrs": {
+        "label": "espeak-ng",
+        "i2t:kind": "external-tool",
+        "role": "phoneme backend for Kokoro"
+      },
+      "label": "espeak-ng"
+    },
+    {
+      "id": "tool:gcloud-cli",
+      "kind": "node",
+      "attrs": {
+        "label": "gcloud CLI",
+        "i2t:kind": "external-tool",
+        "role": "token + project resolution, pre-resolved once before fan-out"
+      },
+      "label": "gcloud CLI"
+    },
+    {
+      "id": "tool:python3",
+      "kind": "node",
+      "attrs": {
+        "label": "python3",
+        "i2t:kind": "external-tool",
+        "role": "JSON/numeric helper for bash driver + adapters; interpreter for kokoro adapter"
+      },
+      "label": "python3"
+    },
+    {
+      "id": "tool:curl",
+      "kind": "node",
+      "attrs": {
+        "label": "curl",
+        "i2t:kind": "external-tool",
+        "role": "HTTP transport for cloud adapters"
+      },
+      "label": "curl"
+    },
+    {
+      "id": "persona:puck",
+      "kind": "node",
+      "attrs": {
+        "label": "Puck",
+        "i2t:kind": "persona",
+        "intent": "upbeat male",
+        "style": "Upbeat",
+        "glyph": "\u25c6",
+        "color": 33,
+        "is-default": true
+      },
+      "label": "Puck"
+    },
+    {
+      "id": "persona:charon",
+      "kind": "node",
+      "attrs": {
+        "label": "Charon",
+        "i2t:kind": "persona",
+        "intent": "informative male",
+        "style": "Informative",
+        "glyph": "\u25a3",
+        "color": 34
+      },
+      "label": "Charon"
+    },
+    {
+      "id": "persona:leda",
+      "kind": "node",
+      "attrs": {
+        "label": "Leda",
+        "i2t:kind": "persona",
+        "intent": "youthful female",
+        "style": "Youthful",
+        "glyph": "\u25cb",
+        "color": 36
+      },
+      "label": "Leda"
+    },
+    {
+      "id": "persona:sulafat",
+      "kind": "node",
+      "attrs": {
+        "label": "Sulafat",
+        "i2t:kind": "persona",
+        "intent": "warm female",
+        "style": "Warm",
+        "glyph": "\u25de",
+        "color": 31,
+        "coverage-note": "no kokoro realization \u2014 honestly unavailable under engine=kokoro (the worked example of leak #1 made impossible)"
+      },
+      "label": "Sulafat"
+    },
+    {
+      "id": "persona:_others",
+      "kind": "node",
+      "attrs": {
+        "label": "(26 other personas)",
+        "i2t:kind": "persona-group",
+        "note": "voices.yaml enumerates all 30; 4 shown here illustrate the pattern"
+      },
+      "label": "(26 other personas)"
+    },
+    {
+      "id": "realization:gemini-puck",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini 'Puck'",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "voice-id": "Puck",
+        "locale": "en-US"
+      },
+      "label": "Gemini 'Puck'"
+    },
+    {
+      "id": "realization:chirp3-puck",
+      "kind": "node",
+      "attrs": {
+        "label": "en-US-Chirp3-HD-Puck",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "voice-id": "en-US-Chirp3-HD-Puck",
+        "locale": "en-US"
+      },
+      "label": "en-US-Chirp3-HD-Puck"
+    },
+    {
+      "id": "realization:kokoro-puck-blend",
+      "kind": "node",
+      "attrs": {
+        "label": "Kokoro 'puck' blend",
+        "i2t:kind": "realization",
+        "realization-kind": "blend",
+        "blend-data": [
+          {
+            "voice": "am_adam",
+            "weight": 0.5
+          },
+          {
+            "voice": "am_michael",
+            "weight": 0.5
+          }
+        ],
+        "locale": "en-us"
+      },
+      "label": "Kokoro 'puck' blend"
+    },
+    {
+      "id": "realization:gemini-charon",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini 'Charon'",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "voice-id": "Charon",
+        "locale": "en-US"
+      },
+      "label": "Gemini 'Charon'"
+    },
+    {
+      "id": "realization:chirp3-charon",
+      "kind": "node",
+      "attrs": {
+        "label": "en-US-Chirp3-HD-Charon",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "locale": "en-US"
+      },
+      "label": "en-US-Chirp3-HD-Charon"
+    },
+    {
+      "id": "realization:kokoro-charon",
+      "kind": "node",
+      "attrs": {
+        "label": "Kokoro am_michael",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "voice-id": "am_michael",
+        "locale": "en-us"
+      },
+      "label": "Kokoro am_michael"
+    },
+    {
+      "id": "realization:gemini-leda",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini 'Leda'",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "voice-id": "Leda",
+        "locale": "en-US"
+      },
+      "label": "Gemini 'Leda'"
+    },
+    {
+      "id": "realization:chirp3-leda",
+      "kind": "node",
+      "attrs": {
+        "label": "en-US-Chirp3-HD-Leda",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "locale": "en-US"
+      },
+      "label": "en-US-Chirp3-HD-Leda"
+    },
+    {
+      "id": "realization:kokoro-leda",
+      "kind": "node",
+      "attrs": {
+        "label": "Kokoro af_bella",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "voice-id": "af_bella",
+        "locale": "en-us"
+      },
+      "label": "Kokoro af_bella"
+    },
+    {
+      "id": "realization:gemini-sulafat",
+      "kind": "node",
+      "attrs": {
+        "label": "Gemini 'Sulafat'",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "voice-id": "Sulafat",
+        "locale": "en-US"
+      },
+      "label": "Gemini 'Sulafat'"
+    },
+    {
+      "id": "realization:chirp3-sulafat",
+      "kind": "node",
+      "attrs": {
+        "label": "en-US-Chirp3-HD-Sulafat",
+        "i2t:kind": "realization",
+        "realization-kind": "named",
+        "locale": "en-US"
+      },
+      "label": "en-US-Chirp3-HD-Sulafat"
+    },
+    {
+      "id": "kokoro-voice:am_adam",
+      "kind": "node",
+      "attrs": {
+        "label": "am_adam",
+        "i2t:kind": "kokoro-native-voice",
+        "language_code": "en-us"
+      },
+      "label": "am_adam"
+    },
+    {
+      "id": "kokoro-voice:am_michael",
+      "kind": "node",
+      "attrs": {
+        "label": "am_michael",
+        "i2t:kind": "kokoro-native-voice",
+        "language_code": "en-us"
+      },
+      "label": "am_michael"
+    },
+    {
+      "id": "kokoro-voice:af_bella",
+      "kind": "node",
+      "attrs": {
+        "label": "af_bella",
+        "i2t:kind": "kokoro-native-voice",
+        "language_code": "en-us"
+      },
+      "label": "af_bella"
+    },
+    {
+      "id": "c:project-contains",
+      "kind": "hyperedge",
+      "label": "contains",
+      "attrs": {
+        "i2t:predicate": "contains",
+        "i2t:edge_category": "containment"
+      }
+    },
+    {
+      "id": "r:voices-yaml-defines-personas",
+      "kind": "hyperedge",
+      "label": "defines",
+      "attrs": {
+        "i2t:predicate": "defines",
+        "i2t:edge_category": "reference",
+        "label": "reclassified containment\u2192reference to match the audit's defines=reference treatment"
+      }
+    },
+    {
+      "id": "r:engines-yaml-defines-engines",
+      "kind": "hyperedge",
+      "label": "defines",
+      "attrs": {
+        "i2t:predicate": "defines",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "sc:extract-adapters",
+      "kind": "hyperedge",
+      "label": "refactors",
+      "attrs": {
+        "i2t:predicate": "refactors",
+        "i2t:edge_category": "state_change",
+        "label": "strangler provenance: the current script's synth bodies are extracted into adapters; the driver is the same orchestration evolved in place"
+      }
+    },
+    {
+      "id": "sc:resolve-voice",
+      "kind": "hyperedge",
+      "label": "resolve-voice",
+      "attrs": {
+        "i2t:predicate": "resolve-voice",
+        "i2t:edge_category": "state_change",
+        "label": "the binding event: (persona, active-engine) \u2192 resolved realization. Reified because the UX reports it."
+      }
+    },
+    {
+      "id": "sc:resolve-voice-fails",
+      "kind": "hyperedge",
+      "label": "fail-resolution",
+      "attrs": {
+        "i2t:predicate": "fail-resolution",
+        "i2t:edge_category": "state_change",
+        "label": "(persona, active-engine) with no realization \u2192 persona-unrealized state; drives the honest error"
+      }
+    },
+    {
+      "id": "sc:optimize",
+      "kind": "hyperedge",
+      "label": "optimize-narration",
+      "attrs": {
+        "i2t:predicate": "optimize-narration",
+        "i2t:edge_category": "state_change",
+        "label": "raw text \u2192 audio-tag-annotated transcript. Fires iff active engine lists audio-tags AND optimizer Gemini auth is satisfiable."
+      }
+    },
+    {
+      "id": "sc:fan-out-synthesis",
+      "kind": "hyperedge",
+      "label": "map-concurrent",
+      "attrs": {
+        "i2t:predicate": "map-concurrent",
+        "i2t:edge_category": "state_change",
+        "label": "chunk-list \u2192 concurrent synthesis, bounded by policy:concurrency (per-engine max_in_flight)"
+      }
+    },
+    {
+      "id": "sc:synthesize-gemini",
+      "kind": "hyperedge",
+      "label": "synthesize-audio",
+      "attrs": {
+        "i2t:predicate": "synthesize-audio",
+        "i2t:edge_category": "state_change",
+        "label": "n-ary over chunk-list, engine, model, realization, output. Polymorphism via i:driver-calls-adapter-*, not positional roles."
+      }
+    },
+    {
+      "id": "sc:synthesize-gcloud",
+      "kind": "hyperedge",
+      "label": "synthesize-audio",
+      "attrs": {
+        "i2t:predicate": "synthesize-audio",
+        "i2t:edge_category": "state_change"
+      }
+    },
+    {
+      "id": "sc:synthesize-kokoro",
+      "kind": "hyperedge",
+      "label": "synthesize-audio",
+      "attrs": {
+        "i2t:predicate": "synthesize-audio",
+        "i2t:edge_category": "state_change",
+        "label": "offline; no service incidence"
+      }
+    },
+    {
+      "id": "sc:validate-config",
+      "kind": "hyperedge",
+      "label": "validate",
+      "attrs": {
+        "i2t:predicate": "validate",
+        "i2t:edge_category": "state_change",
+        "label": "at load, before any synthesis: cross-check voices.yaml + engines.yaml against schemas; unknown engine/persona/capability/blend-voice/model \u2192 print file+key+value, exit nonzero. No fallback path exists."
+      }
+    },
+    {
+      "id": "i:engine-has-default-persona",
+      "kind": "hyperedge",
+      "label": "defaults-to",
+      "attrs": {
+        "i2t:predicate": "defaults-to",
+        "i2t:edge_category": "interactivity",
+        "label": "each engine's default persona MUST have a realization in that engine (validation invariant) \u2014 a bare 'speak hi' never hits the unrealized error"
+      }
+    },
+    {
+      "id": "i:driver-calls-adapter-gemini",
+      "kind": "hyperedge",
+      "label": "invokes-adapter",
+      "attrs": {
+        "i2t:predicate": "invokes-adapter",
+        "i2t:edge_category": "interactivity",
+        "label": "dispatch by config.engine \u2014 this is where the polymorphism lives"
+      }
+    },
+    {
+      "id": "i:driver-calls-adapter-gcloud",
+      "kind": "hyperedge",
+      "label": "invokes-adapter",
+      "attrs": {
+        "i2t:predicate": "invokes-adapter",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "id": "i:driver-calls-adapter-kokoro",
+      "kind": "hyperedge",
+      "label": "invokes-adapter",
+      "attrs": {
+        "i2t:predicate": "invokes-adapter",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "id": "i:adapters-conform-to-contract",
+      "kind": "hyperedge",
+      "label": "conforms-to",
+      "attrs": {
+        "i2t:predicate": "conforms-to",
+        "i2t:edge_category": "interactivity",
+        "label": "all three adapters satisfy the same text+realization-id \u2192 wav+sidecars contract"
+      }
+    },
+    {
+      "id": "i:adapter-gemini-calls-api",
+      "kind": "hyperedge",
+      "label": "http-call",
+      "attrs": {
+        "i2t:predicate": "http-call",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "id": "i:adapter-gcloud-calls-api",
+      "kind": "hyperedge",
+      "label": "http-call",
+      "attrs": {
+        "i2t:predicate": "http-call",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "id": "i:driver-reports-realization",
+      "kind": "hyperedge",
+      "label": "reports",
+      "attrs": {
+        "i2t:predicate": "reports",
+        "i2t:edge_category": "interactivity",
+        "label": "THE lie-killer: the badge names the realization actually rendered, showing both requested persona and resolved realization when they differ (e.g. 'Puck \u2192 Kokoro blend'); collapses to one when identical"
+      }
+    },
+    {
+      "id": "i:driver-lists-personas",
+      "kind": "hyperedge",
+      "label": "list-personas",
+      "attrs": {
+        "i2t:predicate": "list-personas",
+        "i2t:edge_category": "interactivity",
+        "label": "speak voices: lists personas for the ACTIVE engine with realization labels; unrealized ones shown dimmed with reason. speak voices --all = persona\u00d7engine coverage grid."
+      }
+    },
+    {
+      "id": "i:driver-plays-output",
+      "kind": "hyperedge",
+      "label": "plays-audio",
+      "attrs": {
+        "i2t:predicate": "plays-audio",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "id": "i:blend-composition",
+      "kind": "hyperedge",
+      "label": "blends",
+      "attrs": {
+        "i2t:predicate": "blends",
+        "i2t:edge_category": "interactivity",
+        "label": "RESTORED from audit (v1 dropped it): the puck blend is 0.5 am_adam + 0.5 am_michael style vectors"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-gemini-puck",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference",
+        "label": "static correspondence (persona realized by voice-id here) \u2014 reference, not interactivity"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-chirp3-puck",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-kokoro-puck",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-gemini-charon",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-chirp3-charon",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-kokoro-charon",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-gemini-leda",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-chirp3-leda",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-kokoro-leda",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-gemini-sulafat",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:persona-has-realization-chirp3-sulafat",
+      "kind": "hyperedge",
+      "label": "has-realization",
+      "attrs": {
+        "i2t:predicate": "has-realization",
+        "i2t:edge_category": "reference",
+        "label": "Sulafat has NO kokoro has-realization edge \u2014 the absence IS the honesty"
+      }
+    },
+    {
+      "id": "r:capability-gate-saves-optimizer",
+      "kind": "hyperedge",
+      "label": "documents",
+      "attrs": {
+        "i2t:predicate": "documents",
+        "i2t:edge_category": "reference",
+        "label": "gcloud AND kokoro skip the optimizer round-trip; stops a future reader re-adding a global optimizer for 'the cloud path'"
+      }
+    },
+    {
+      "id": "r:driver-applies-missing-realization-policy",
+      "kind": "hyperedge",
+      "label": "applies-policy",
+      "attrs": {
+        "i2t:predicate": "applies-policy",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "id": "r:resolution-error-suggests-alternatives",
+      "kind": "hyperedge",
+      "label": "suggests",
+      "attrs": {
+        "i2t:predicate": "suggests",
+        "i2t:edge_category": "reference",
+        "label": "the error names the engines where the persona DOES have a realization"
+      }
+    },
+    {
+      "id": "r:concurrency-bounds-fanout",
+      "kind": "hyperedge",
+      "label": "bounds",
+      "attrs": {
+        "i2t:predicate": "bounds",
+        "i2t:edge_category": "reference",
+        "label": "policy:concurrency supplies per-engine max_in_flight to the fan-out"
+      }
+    },
+    {
+      "id": "r:realization-uses-native-voice",
+      "kind": "hyperedge",
+      "label": "uses-native-voice",
+      "attrs": {
+        "i2t:predicate": "uses-native-voice",
+        "i2t:edge_category": "reference",
+        "label": "a named kokoro realization points at the underlying native voice (locale carried as data on the voice)"
+      }
+    },
+    {
+      "id": "r:engine-readiness-deferred",
+      "kind": "hyperedge",
+      "label": "evaluates-readiness",
+      "attrs": {
+        "i2t:predicate": "evaluates-readiness",
+        "i2t:edge_category": "reference",
+        "label": "DEFERRED: driver evaluates per-engine preconditions for honest reporting; NOT cross-engine fallback"
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": "c:project-contains",
+      "target": "project:speak",
+      "directed": true,
+      "role": "container",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:driver",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:voices-yaml",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:engines-yaml",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:voices-schema",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:engines-schema",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:adapter-gemini",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:adapter-gcloud",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "c:project-contains",
+      "target": "artifact:adapter-kokoro",
+      "directed": true,
+      "role": "contained",
+      "layer": "contains"
+    },
+    {
+      "source": "r:voices-yaml-defines-personas",
+      "target": "artifact:voices-yaml",
+      "directed": true,
+      "role": "definer",
+      "layer": "defines"
+    },
+    {
+      "source": "r:voices-yaml-defines-personas",
+      "target": "persona:puck",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:voices-yaml-defines-personas",
+      "target": "persona:charon",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:voices-yaml-defines-personas",
+      "target": "persona:leda",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:voices-yaml-defines-personas",
+      "target": "persona:sulafat",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:voices-yaml-defines-personas",
+      "target": "persona:_others",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:engines-yaml-defines-engines",
+      "target": "artifact:engines-yaml",
+      "directed": true,
+      "role": "definer",
+      "layer": "defines"
+    },
+    {
+      "source": "r:engines-yaml-defines-engines",
+      "target": "engine:gemini",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:engines-yaml-defines-engines",
+      "target": "engine:gcloud-chirp3",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:engines-yaml-defines-engines",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "defined",
+      "layer": "defines"
+    },
+    {
+      "source": "r:engines-yaml-defines-engines",
+      "target": "capability:audio-tags",
+      "directed": true,
+      "role": "defined-capability",
+      "layer": "defines"
+    },
+    {
+      "source": "r:engines-yaml-defines-engines",
+      "target": "model:gemini-optimizer",
+      "directed": true,
+      "role": "defined-optimizer",
+      "layer": "defines"
+    },
+    {
+      "source": "sc:extract-adapters",
+      "target": "artifact:speak-v1",
+      "directed": true,
+      "role": "before",
+      "layer": "refactors"
+    },
+    {
+      "source": "sc:extract-adapters",
+      "target": "artifact:driver",
+      "directed": true,
+      "role": "after",
+      "layer": "refactors"
+    },
+    {
+      "source": "sc:extract-adapters",
+      "target": "artifact:adapter-gemini",
+      "directed": true,
+      "role": "extracted-body",
+      "layer": "refactors"
+    },
+    {
+      "source": "sc:extract-adapters",
+      "target": "artifact:adapter-gcloud",
+      "directed": true,
+      "role": "extracted-body",
+      "layer": "refactors"
+    },
+    {
+      "source": "sc:extract-adapters",
+      "target": "artifact:adapter-kokoro",
+      "directed": true,
+      "role": "extracted-body",
+      "layer": "refactors"
+    },
+    {
+      "source": "sc:resolve-voice",
+      "target": "persona:puck",
+      "directed": true,
+      "role": "requested",
+      "layer": "resolve-voice"
+    },
+    {
+      "source": "sc:resolve-voice",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "active-engine",
+      "layer": "resolve-voice"
+    },
+    {
+      "source": "sc:resolve-voice",
+      "target": "realization:kokoro-puck-blend",
+      "directed": true,
+      "role": "resolved",
+      "layer": "resolve-voice"
+    },
+    {
+      "source": "sc:resolve-voice-fails",
+      "target": "persona:sulafat",
+      "directed": true,
+      "role": "requested",
+      "layer": "fail-resolution"
+    },
+    {
+      "source": "sc:resolve-voice-fails",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "active-engine",
+      "layer": "fail-resolution"
+    },
+    {
+      "source": "sc:resolve-voice-fails",
+      "target": "state:persona-unrealized",
+      "directed": true,
+      "role": "result",
+      "layer": "fail-resolution"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "model:gemini-optimizer",
+      "directed": true,
+      "role": "agent",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "service:gemini-api",
+      "directed": true,
+      "role": "calls",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "sc:optimize",
+      "target": "capability:audio-tags",
+      "directed": true,
+      "role": "produces-vocabulary",
+      "layer": "optimize-narration"
+    },
+    {
+      "source": "tool:python3",
+      "target": "state:chunk-list",
+      "directed": true,
+      "label": "text \u2192 ordered chunk-list. fires-when: word_count > threshold (default 500); below threshold text passes straight to synthesize (no subprocess overhead). Engine-agnostic.",
+      "layer": "chunk",
+      "source_role": "implementation",
+      "target_role": "output",
+      "attrs": {
+        "i2t:predicate": "chunk",
+        "i2t:edge_category": "state_change",
+        "label": "text \u2192 ordered chunk-list. fires-when: word_count > threshold (default 500); below threshold text passes straight to synthesize (no subprocess overhead). Engine-agnostic.",
+        "cost-semantics": "cloud: latency-only (enables bounded-parallel), does not reduce per-char billing; kokoro: local memory only"
+      }
+    },
+    {
+      "source": "sc:fan-out-synthesis",
+      "target": "state:chunk-list",
+      "directed": true,
+      "role": "input",
+      "layer": "map-concurrent"
+    },
+    {
+      "source": "sc:fan-out-synthesis",
+      "target": "policy:concurrency",
+      "directed": true,
+      "role": "bound-by",
+      "layer": "map-concurrent"
+    },
+    {
+      "source": "sc:fan-out-synthesis",
+      "target": "state:wav-chunks",
+      "directed": true,
+      "role": "output",
+      "layer": "map-concurrent"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "state:chunk-list",
+      "directed": true,
+      "role": "input",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "engine:gemini",
+      "directed": true,
+      "role": "engine",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "model:gemini-tts-default",
+      "directed": true,
+      "role": "model",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "realization:gemini-puck",
+      "directed": true,
+      "role": "realization",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gemini",
+      "target": "state:wav-chunks",
+      "directed": true,
+      "role": "output",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gcloud",
+      "target": "state:chunk-list",
+      "directed": true,
+      "role": "input",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gcloud",
+      "target": "engine:gcloud-chirp3",
+      "directed": true,
+      "role": "engine",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gcloud",
+      "target": "realization:chirp3-puck",
+      "directed": true,
+      "role": "realization",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-gcloud",
+      "target": "state:wav-chunks",
+      "directed": true,
+      "role": "output",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "state:chunk-list",
+      "directed": true,
+      "role": "input",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "engine",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "model:kokoro",
+      "directed": true,
+      "role": "model",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "realization:kokoro-puck-blend",
+      "directed": true,
+      "role": "realization",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "sc:synthesize-kokoro",
+      "target": "state:wav-chunks",
+      "directed": true,
+      "role": "output",
+      "layer": "synthesize-audio"
+    },
+    {
+      "source": "state:wav-chunks",
+      "target": "tool:ffmpeg",
+      "directed": true,
+      "label": "ordered wav-chunks \u2192 single WAV via ffmpeg -c copy. fires-when: num_chunks > 1 (single-chunk run cp's, skips concat). Partial-failure tolerant: continues with successful chunks, aborts only if all fail.",
+      "layer": "concatenate",
+      "source_role": "input",
+      "target_role": "tool",
+      "attrs": {
+        "i2t:predicate": "concatenate",
+        "i2t:edge_category": "state_change",
+        "label": "ordered wav-chunks \u2192 single WAV via ffmpeg -c copy. fires-when: num_chunks > 1 (single-chunk run cp's, skips concat). Partial-failure tolerant: continues with successful chunks, aborts only if all fail."
+      }
+    },
+    {
+      "source": "sc:validate-config",
+      "target": "artifact:driver",
+      "directed": true,
+      "role": "validator",
+      "layer": "validate"
+    },
+    {
+      "source": "sc:validate-config",
+      "target": "artifact:voices-yaml",
+      "directed": true,
+      "role": "subject",
+      "layer": "validate"
+    },
+    {
+      "source": "sc:validate-config",
+      "target": "artifact:engines-yaml",
+      "directed": true,
+      "role": "subject",
+      "layer": "validate"
+    },
+    {
+      "source": "sc:validate-config",
+      "target": "artifact:voices-schema",
+      "directed": true,
+      "role": "ruleset",
+      "layer": "validate"
+    },
+    {
+      "source": "sc:validate-config",
+      "target": "artifact:engines-schema",
+      "directed": true,
+      "role": "ruleset",
+      "layer": "validate"
+    },
+    {
+      "source": "engine:gemini",
+      "target": "capability:audio-tags",
+      "directed": true,
+      "label": "only Gemini; drives optimizer gating",
+      "layer": "has-capability",
+      "source_role": "engine",
+      "target_role": "capability",
+      "attrs": {
+        "i2t:predicate": "has-capability",
+        "i2t:edge_category": "interactivity",
+        "label": "only Gemini; drives optimizer gating"
+      }
+    },
+    {
+      "source": "model:gemini-optimizer",
+      "target": "capability:audio-tags",
+      "directed": true,
+      "label": "optimize fires only if the active engine has audio-tags",
+      "layer": "requires-capability",
+      "source_role": "gated-agent",
+      "target_role": "required-capability",
+      "attrs": {
+        "i2t:predicate": "requires-capability",
+        "i2t:edge_category": "interactivity",
+        "label": "optimize fires only if the active engine has audio-tags"
+      }
+    },
+    {
+      "source": "model:gemini-optimizer",
+      "target": "auth:gemini-api-key",
+      "directed": false,
+      "label": "the optimizer authenticates against Gemini INDEPENDENT of the synth engine's auth \u2014 engine=gcloud + optimize still needs GEMINI_API_KEY",
+      "layer": "requires-auth",
+      "source_role": "agent",
+      "target_role": "auth-method",
+      "attrs": {
+        "i2t:predicate": "requires-auth",
+        "i2t:edge_category": "interactivity",
+        "label": "the optimizer authenticates against Gemini INDEPENDENT of the synth engine's auth \u2014 engine=gcloud + optimize still needs GEMINI_API_KEY"
+      }
+    },
+    {
+      "source": "engine:gemini",
+      "target": "model:gemini-tts-default",
+      "directed": true,
+      "label": "uses-model",
+      "layer": "uses-model",
+      "source_role": "engine",
+      "target_role": "model-default",
+      "attrs": {
+        "i2t:predicate": "uses-model",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "engine:gemini",
+      "target": "model:gemini-tts-fast",
+      "directed": true,
+      "label": "uses-model",
+      "layer": "uses-model",
+      "source_role": "engine",
+      "target_role": "model-alt",
+      "attrs": {
+        "i2t:predicate": "uses-model",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "engine:kokoro",
+      "target": "model:kokoro",
+      "directed": true,
+      "label": "uses-model",
+      "layer": "uses-model",
+      "source_role": "engine",
+      "target_role": "model",
+      "attrs": {
+        "i2t:predicate": "uses-model",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "engine:gemini",
+      "target": "auth:gemini-api-key",
+      "directed": false,
+      "label": "requires-auth",
+      "layer": "requires-auth",
+      "source_role": "engine",
+      "target_role": "auth-method",
+      "attrs": {
+        "i2t:predicate": "requires-auth",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "engine:gcloud-chirp3",
+      "target": "auth:gcloud-oauth",
+      "directed": false,
+      "label": "requires-auth",
+      "layer": "requires-auth",
+      "source_role": "engine",
+      "target_role": "auth-method",
+      "attrs": {
+        "i2t:predicate": "requires-auth",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "engine:kokoro",
+      "target": "auth:none",
+      "directed": false,
+      "label": "requires-auth",
+      "layer": "requires-auth",
+      "source_role": "engine",
+      "target_role": "auth-method",
+      "attrs": {
+        "i2t:predicate": "requires-auth",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "i:engine-has-default-persona",
+      "target": "engine:gemini",
+      "directed": true,
+      "role": "engine",
+      "layer": "defaults-to"
+    },
+    {
+      "source": "i:engine-has-default-persona",
+      "target": "engine:gcloud-chirp3",
+      "directed": true,
+      "role": "engine",
+      "layer": "defaults-to"
+    },
+    {
+      "source": "i:engine-has-default-persona",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "engine",
+      "layer": "defaults-to"
+    },
+    {
+      "source": "i:engine-has-default-persona",
+      "target": "persona:puck",
+      "directed": true,
+      "role": "default-persona",
+      "layer": "defaults-to"
+    },
+    {
+      "source": "i:driver-calls-adapter-gemini",
+      "target": "artifact:driver",
+      "directed": false,
+      "role": "driver",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-gemini",
+      "target": "artifact:adapter-gemini",
+      "directed": false,
+      "role": "adapter",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-gemini",
+      "target": "engine:gemini",
+      "directed": false,
+      "role": "selected-when",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-gcloud",
+      "target": "artifact:driver",
+      "directed": false,
+      "role": "driver",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-gcloud",
+      "target": "artifact:adapter-gcloud",
+      "directed": false,
+      "role": "adapter",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-gcloud",
+      "target": "engine:gcloud-chirp3",
+      "directed": false,
+      "role": "selected-when",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-kokoro",
+      "target": "artifact:driver",
+      "directed": false,
+      "role": "driver",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-kokoro",
+      "target": "artifact:adapter-kokoro",
+      "directed": false,
+      "role": "adapter",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-kokoro",
+      "target": "engine:kokoro",
+      "directed": false,
+      "role": "selected-when",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:driver-calls-adapter-kokoro",
+      "target": "tool:python3",
+      "directed": false,
+      "role": "interpreter",
+      "layer": "invokes-adapter"
+    },
+    {
+      "source": "i:adapters-conform-to-contract",
+      "target": "contract:adapter",
+      "directed": true,
+      "role": "contract",
+      "layer": "conforms-to"
+    },
+    {
+      "source": "i:adapters-conform-to-contract",
+      "target": "artifact:adapter-gemini",
+      "directed": true,
+      "role": "implementor",
+      "layer": "conforms-to"
+    },
+    {
+      "source": "i:adapters-conform-to-contract",
+      "target": "artifact:adapter-gcloud",
+      "directed": true,
+      "role": "implementor",
+      "layer": "conforms-to"
+    },
+    {
+      "source": "i:adapters-conform-to-contract",
+      "target": "artifact:adapter-kokoro",
+      "directed": true,
+      "role": "implementor",
+      "layer": "conforms-to"
+    },
+    {
+      "source": "i:adapter-gemini-calls-api",
+      "target": "artifact:adapter-gemini",
+      "directed": false,
+      "role": "client",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:adapter-gemini-calls-api",
+      "target": "service:gemini-api",
+      "directed": false,
+      "role": "server",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:adapter-gemini-calls-api",
+      "target": "tool:curl",
+      "directed": false,
+      "role": "transport",
+      "layer": "http-call"
+    },
+    {
+      "source": "artifact:adapter-gemini",
+      "target": "tool:ffmpeg",
+      "directed": true,
+      "label": "gemini adapter ONLY: PCM s16le 24k mono \u2192 WAV; distinct from the driver's concat use of ffmpeg",
+      "layer": "transcode",
+      "source_role": "client",
+      "target_role": "tool",
+      "attrs": {
+        "i2t:predicate": "transcode",
+        "i2t:edge_category": "interactivity",
+        "label": "gemini adapter ONLY: PCM s16le 24k mono \u2192 WAV; distinct from the driver's concat use of ffmpeg"
+      }
+    },
+    {
+      "source": "i:adapter-gcloud-calls-api",
+      "target": "artifact:adapter-gcloud",
+      "directed": false,
+      "role": "client",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:adapter-gcloud-calls-api",
+      "target": "service:gcloud-tts-api",
+      "directed": false,
+      "role": "server",
+      "layer": "http-call"
+    },
+    {
+      "source": "i:adapter-gcloud-calls-api",
+      "target": "tool:curl",
+      "directed": false,
+      "role": "transport",
+      "layer": "http-call"
+    },
+    {
+      "source": "artifact:adapter-gcloud",
+      "target": "tool:gcloud-cli",
+      "directed": false,
+      "label": "uses-auth-tool",
+      "layer": "uses-auth-tool",
+      "source_role": "client",
+      "target_role": "auth-resolver",
+      "attrs": {
+        "i2t:predicate": "uses-auth-tool",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "artifact:adapter-kokoro",
+      "target": "tool:espeak-ng",
+      "directed": false,
+      "label": "depends-on",
+      "layer": "depends-on",
+      "source_role": "client",
+      "target_role": "dependency",
+      "attrs": {
+        "i2t:predicate": "depends-on",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "i:driver-reports-realization",
+      "target": "artifact:driver",
+      "directed": true,
+      "role": "reporter",
+      "layer": "reports"
+    },
+    {
+      "source": "i:driver-reports-realization",
+      "target": "realization:kokoro-puck-blend",
+      "directed": true,
+      "role": "subject",
+      "layer": "reports"
+    },
+    {
+      "source": "i:driver-reports-realization",
+      "target": "persona:puck",
+      "directed": true,
+      "role": "requested-as",
+      "layer": "reports"
+    },
+    {
+      "source": "i:driver-lists-personas",
+      "target": "artifact:driver",
+      "directed": true,
+      "role": "lister",
+      "layer": "list-personas"
+    },
+    {
+      "source": "i:driver-lists-personas",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "filter",
+      "layer": "list-personas"
+    },
+    {
+      "source": "i:driver-lists-personas",
+      "target": "persona:puck",
+      "directed": true,
+      "role": "listed",
+      "layer": "list-personas"
+    },
+    {
+      "source": "i:driver-lists-personas",
+      "target": "persona:sulafat",
+      "directed": true,
+      "role": "listed-unavailable",
+      "layer": "list-personas"
+    },
+    {
+      "source": "artifact:driver",
+      "target": "concept:coverage-invariants",
+      "directed": true,
+      "label": "validates",
+      "layer": "validates",
+      "source_role": "validator",
+      "target_role": "ruleset",
+      "attrs": {
+        "i2t:predicate": "validates",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "artifact:driver",
+      "target": "artifact:config-file",
+      "directed": false,
+      "label": "reads-writes",
+      "layer": "reads-writes",
+      "source_role": "manager",
+      "target_role": "managed",
+      "attrs": {
+        "i2t:predicate": "reads-writes",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "artifact:driver",
+      "target": "artifact:voices-yaml",
+      "directed": false,
+      "label": "reads",
+      "layer": "reads",
+      "source_role": "reader",
+      "target_role": "source",
+      "attrs": {
+        "i2t:predicate": "reads",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "artifact:driver",
+      "target": "artifact:engines-yaml",
+      "directed": false,
+      "label": "reads",
+      "layer": "reads",
+      "source_role": "reader",
+      "target_role": "source",
+      "attrs": {
+        "i2t:predicate": "reads",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "artifact:driver",
+      "target": "tool:clipboard",
+      "directed": true,
+      "label": "fires when -c",
+      "layer": "reads",
+      "source_role": "reader",
+      "target_role": "source",
+      "attrs": {
+        "i2t:predicate": "reads",
+        "i2t:edge_category": "interactivity",
+        "label": "fires when -c"
+      }
+    },
+    {
+      "source": "i:driver-plays-output",
+      "target": "artifact:driver",
+      "directed": true,
+      "role": "client",
+      "layer": "plays-audio"
+    },
+    {
+      "source": "i:driver-plays-output",
+      "target": "tool:audio-player",
+      "directed": true,
+      "role": "default-player",
+      "layer": "plays-audio"
+    },
+    {
+      "source": "i:driver-plays-output",
+      "target": "tool:ffplay",
+      "directed": true,
+      "role": "visualizer-player",
+      "layer": "plays-audio"
+    },
+    {
+      "source": "artifact:driver",
+      "target": "tool:ffprobe",
+      "directed": true,
+      "label": "probes",
+      "layer": "probes",
+      "source_role": "caller",
+      "target_role": "tool",
+      "attrs": {
+        "i2t:predicate": "probes",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "artifact:driver",
+      "target": "tool:ffmpeg",
+      "directed": true,
+      "label": "concat-tool-use",
+      "layer": "concat-tool-use",
+      "source_role": "orchestrator",
+      "target_role": "tool",
+      "attrs": {
+        "i2t:predicate": "concat-tool-use",
+        "i2t:edge_category": "interactivity"
+      }
+    },
+    {
+      "source": "i:blend-composition",
+      "target": "realization:kokoro-puck-blend",
+      "directed": true,
+      "role": "blend",
+      "layer": "blends"
+    },
+    {
+      "source": "i:blend-composition",
+      "target": "kokoro-voice:am_adam",
+      "directed": true,
+      "role": "component",
+      "layer": "blends",
+      "attrs": {
+        "weight": 0.5
+      }
+    },
+    {
+      "source": "i:blend-composition",
+      "target": "kokoro-voice:am_michael",
+      "directed": true,
+      "role": "component",
+      "layer": "blends",
+      "attrs": {
+        "weight": 0.5
+      }
+    },
+    {
+      "source": "r:persona-has-realization-gemini-puck",
+      "target": "persona:puck",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-puck",
+      "target": "engine:gemini",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-puck",
+      "target": "realization:gemini-puck",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-puck",
+      "target": "persona:puck",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-puck",
+      "target": "engine:gcloud-chirp3",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-puck",
+      "target": "realization:chirp3-puck",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-puck",
+      "target": "persona:puck",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-puck",
+      "target": "engine:kokoro",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-puck",
+      "target": "realization:kokoro-puck-blend",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-charon",
+      "target": "persona:charon",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-charon",
+      "target": "engine:gemini",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-charon",
+      "target": "realization:gemini-charon",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-charon",
+      "target": "persona:charon",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-charon",
+      "target": "engine:gcloud-chirp3",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-charon",
+      "target": "realization:chirp3-charon",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-charon",
+      "target": "persona:charon",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-charon",
+      "target": "engine:kokoro",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-charon",
+      "target": "realization:kokoro-charon",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-leda",
+      "target": "persona:leda",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-leda",
+      "target": "engine:gemini",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-leda",
+      "target": "realization:gemini-leda",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-leda",
+      "target": "persona:leda",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-leda",
+      "target": "engine:gcloud-chirp3",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-leda",
+      "target": "realization:chirp3-leda",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-leda",
+      "target": "persona:leda",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-leda",
+      "target": "engine:kokoro",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-kokoro-leda",
+      "target": "realization:kokoro-leda",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-sulafat",
+      "target": "persona:sulafat",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-sulafat",
+      "target": "engine:gemini",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-gemini-sulafat",
+      "target": "realization:gemini-sulafat",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-sulafat",
+      "target": "persona:sulafat",
+      "directed": false,
+      "role": "persona",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-sulafat",
+      "target": "engine:gcloud-chirp3",
+      "directed": false,
+      "role": "engine",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:persona-has-realization-chirp3-sulafat",
+      "target": "realization:chirp3-sulafat",
+      "directed": false,
+      "role": "realization",
+      "layer": "has-realization"
+    },
+    {
+      "source": "r:capability-gate-saves-optimizer",
+      "target": "capability:audio-tags",
+      "directed": true,
+      "role": "gate",
+      "layer": "documents"
+    },
+    {
+      "source": "r:capability-gate-saves-optimizer",
+      "target": "engine:gcloud-chirp3",
+      "directed": true,
+      "role": "skips-optimizer",
+      "layer": "documents"
+    },
+    {
+      "source": "r:capability-gate-saves-optimizer",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "skips-optimizer",
+      "layer": "documents"
+    },
+    {
+      "source": "r:driver-applies-missing-realization-policy",
+      "target": "artifact:driver",
+      "directed": true,
+      "role": "enforcer",
+      "layer": "applies-policy"
+    },
+    {
+      "source": "r:driver-applies-missing-realization-policy",
+      "target": "policy:missing-realization",
+      "directed": true,
+      "role": "policy",
+      "layer": "applies-policy"
+    },
+    {
+      "source": "r:driver-applies-missing-realization-policy",
+      "target": "persona:sulafat",
+      "directed": true,
+      "role": "worked-example",
+      "layer": "applies-policy"
+    },
+    {
+      "source": "r:resolution-error-suggests-alternatives",
+      "target": "state:persona-unrealized",
+      "directed": true,
+      "role": "failure",
+      "layer": "suggests"
+    },
+    {
+      "source": "r:resolution-error-suggests-alternatives",
+      "target": "engine:gemini",
+      "directed": true,
+      "role": "available-in",
+      "layer": "suggests"
+    },
+    {
+      "source": "r:resolution-error-suggests-alternatives",
+      "target": "engine:gcloud-chirp3",
+      "directed": true,
+      "role": "available-in",
+      "layer": "suggests"
+    },
+    {
+      "source": "artifact:driver",
+      "target": "concept:persona-is-intent-not-timbre",
+      "directed": true,
+      "label": "defines",
+      "layer": "defines",
+      "source_role": "definer",
+      "target_role": "defined",
+      "attrs": {
+        "i2t:predicate": "defines",
+        "i2t:edge_category": "reference"
+      }
+    },
+    {
+      "source": "r:concurrency-bounds-fanout",
+      "target": "policy:concurrency",
+      "directed": true,
+      "role": "policy",
+      "layer": "bounds"
+    },
+    {
+      "source": "r:concurrency-bounds-fanout",
+      "target": "engine:gemini",
+      "directed": true,
+      "role": "applies-to",
+      "layer": "bounds"
+    },
+    {
+      "source": "r:concurrency-bounds-fanout",
+      "target": "engine:gcloud-chirp3",
+      "directed": true,
+      "role": "applies-to",
+      "layer": "bounds"
+    },
+    {
+      "source": "r:concurrency-bounds-fanout",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "applies-to",
+      "layer": "bounds"
+    },
+    {
+      "source": "r:realization-uses-native-voice",
+      "target": "realization:kokoro-charon",
+      "directed": true,
+      "role": "realization",
+      "layer": "uses-native-voice"
+    },
+    {
+      "source": "r:realization-uses-native-voice",
+      "target": "kokoro-voice:am_michael",
+      "directed": true,
+      "role": "native-voice",
+      "layer": "uses-native-voice"
+    },
+    {
+      "source": "r:realization-uses-native-voice",
+      "target": "realization:kokoro-leda",
+      "directed": true,
+      "role": "realization",
+      "layer": "uses-native-voice"
+    },
+    {
+      "source": "r:realization-uses-native-voice",
+      "target": "kokoro-voice:af_bella",
+      "directed": true,
+      "role": "native-voice",
+      "layer": "uses-native-voice"
+    },
+    {
+      "source": "r:engine-readiness-deferred",
+      "target": "concept:engine-readiness",
+      "directed": true,
+      "role": "concept",
+      "layer": "evaluates-readiness"
+    },
+    {
+      "source": "r:engine-readiness-deferred",
+      "target": "engine:gemini",
+      "directed": true,
+      "role": "subject",
+      "layer": "evaluates-readiness"
+    },
+    {
+      "source": "r:engine-readiness-deferred",
+      "target": "engine:gcloud-chirp3",
+      "directed": true,
+      "role": "subject",
+      "layer": "evaluates-readiness"
+    },
+    {
+      "source": "r:engine-readiness-deferred",
+      "target": "engine:kokoro",
+      "directed": true,
+      "role": "subject",
+      "layer": "evaluates-readiness"
+    }
+  ]
+}
