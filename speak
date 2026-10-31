@@ -320,6 +320,7 @@ load_config() {
   CFG_OPTIMIZER_MODEL=""
   CFG_DAEMON_PROMPT=""
   CFG_EMPHASIS=""
+  CFG_VIEW=""
   # Per-engine model overrides stored as model_overrides.<engine>=<model>.
   # Kept as plain scalars (bash 3.2-compatible; no associative arrays) since
   # there are exactly four known engines.
@@ -339,6 +340,7 @@ load_config() {
         optimizer_model) CFG_OPTIMIZER_MODEL="$value" ;;
         daemon_prompt|prompt_daemon) CFG_DAEMON_PROMPT="$value" ;;
         emphasis) CFG_EMPHASIS="$value" ;;
+        view) CFG_VIEW="$value" ;;
         model_overrides.gemini) CFG_MODEL_OVERRIDE_gemini="$value" ;;
         model_overrides.gcloud) CFG_MODEL_OVERRIDE_gcloud="$value" ;;
         model_overrides.kokoro) CFG_MODEL_OVERRIDE_kokoro="$value" ;;
@@ -775,6 +777,7 @@ cmd_set() {
     local dp="${CFG_DAEMON_PROMPT:-true}"
     echo -e "  daemon_prompt      ${DIM}${dp}${RESET}" >&2
     echo -e "  emphasis           ${DIM}${CFG_EMPHASIS:-bold}${RESET}" >&2
+    echo -e "  view               ${DIM}${CFG_VIEW:-scroll}${RESET}" >&2
     local oe
     for oe in gemini gcloud kokoro bark; do
       local ov; ov="$(model_override_for "$oe")"
@@ -865,9 +868,21 @@ cmd_set() {
           ;;
       esac
       ;;
+    view)
+      case "$(tolower "${value:-}")" in
+        scroll|window)
+          save_config_value "view" "$(tolower "$value")"
+          echo -e "${GREEN}✓${RESET} caption view set to ${BOLD}$(tolower "$value")${RESET}" >&2
+          ;;
+        *)
+          err "Invalid view: '${value:-}'. Must be one of: scroll, window"
+          exit 1
+          ;;
+      esac
+      ;;
     *)
       err "Unknown config key: $key"
-      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_provider, optimizer_model, daemon_prompt, emphasis${RESET}" >&2
+      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_provider, optimizer_model, daemon_prompt, emphasis, view${RESET}" >&2
       exit 1
       ;;
   esac
@@ -1062,6 +1077,7 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -o, --output FILE             Save .wav file instead of playing
     -q, --quiet                   Suppress narration transcript display
     -l, --lines N                 Closed captioning lines in HUD (1-8, default: 3)
+        --view MODE               Caption display mode: scroll | window (default: scroll)
         --highlight MODE          Caption highlight style: word | line (default: word)
         --lead MS                 Caption anticipation lead in ms before speech (default: 65)
     -s, --show [MODE]             Play with visual display (wave or spec)
@@ -1311,6 +1327,7 @@ cmd_speak() {
   local play=true
   local quiet=false
   local lines_flag="3"
+  local view_flag=""
   local highlight_flag="word"
   local lead_flag="65"
   local use_stdout=false
@@ -1342,6 +1359,9 @@ cmd_speak() {
       -o|--output) output="$2"; play=false; shift 2 ;;
       -q|--quiet) quiet=true; shift ;;
       -l|--lines) lines_flag="$2"; shift 2 ;;
+      --view) view_flag="$2"; shift 2 ;;
+      --scroll) view_flag="scroll"; shift ;;
+      --window) view_flag="window"; shift ;;
       --highlight|--hl) highlight_flag="$2"; shift 2 ;;
       --lead) lead_flag="$2"; shift 2 ;;
       --stdout) use_stdout=true; play=false; quiet=true; shift ;;
@@ -1769,7 +1789,7 @@ print(json.dumps(meta, indent=2))
       ffplay -autoexit -showmode "$ff_showmode" -window_title "speak: ${badge_name}" -loglevel quiet "$wav_file" 2>/dev/null
     else
       if [[ "$quiet" == false && -t 2 ]] && [[ -f "${SCRIPT_DIR}/visualizer.py" ]]; then
-        "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "${persona:-$badge_name}" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-word}" --emphasis "${CFG_EMPHASIS:-bold}"
+        "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "${persona:-$badge_name}" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-word}" --emphasis "${CFG_EMPHASIS:-bold}" --view "${view_flag:-${CFG_VIEW:-scroll}}"
       else
         echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
         if command -v afplay &>/dev/null; then

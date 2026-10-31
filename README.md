@@ -259,8 +259,14 @@ During playback, `speak` renders a borderless, adaptive teleprompter that auto-s
   speak set emphasis both        # Bold + underline
   speak set emphasis inverse     # High-contrast inverted pill
   ```
-* **Closed Captioning / Lyric Scrolling:** 1 to 8 lines of text with vertical breathing room (default: `3`). Centered on the active line.
-  * `-l, --lines N`: Set visible caption lines (1 to 8, default: `3`).
+* **Full Scroll View & Window View (`speak set view scroll|window`):**
+  * `--view scroll` / `speak set view scroll` (default): **Full Scroll View** using the terminal's native scrollback. As each line completes, it is permanently printed into the terminal history above the live active line and bottom telemetry bar so you can scroll up at any time.
+  * `--view window` / `speak set view window`: Fixed `-l N` (1 to 8 lines, default: `3`) in-place teleprompter window.
+* **Sample-Accurate Per-Clause Timing & Markdown Normalization (Kokoro):**
+  * Automatically strips Markdown syntax (`***`, `**bold**`, `# Headings`, `[links](url)`, tables, and backticks) so TTS never reads formatting symbols (`"asterisk asterisk asterisk"`) aloud.
+  * Synthesizes clause-by-clause and writes `<output>.timing.json` with exact sample-level `[start, speech_end, end]` timestamps (`len(audio_part) / 24000.0`), locking the visual word highlight to the audio with zero cumulative drift.
+* **Closed Captioning / Lyric Scrolling:**
+  * `-l, --lines N`: Set visible caption lines in `window` mode (1 to 8, default: `3`).
   * `--highlight word | line`: Choose between word-by-word karaoke style (default) or line-by-line illumination.
   * `--lead MS`: Caption anticipation lead time in milliseconds before speech (default: `65`).
   * **Monochromatic Cyan Gradient:** Single hue only; the spoken line is electric cyan, stepping down in pure cyan luminance (84%, 67%, 51%, 37%) so visual attention is never distracted by conflicting colors.

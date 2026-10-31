@@ -29,6 +29,7 @@ import os
 import sys
 import ssl
 import re
+import json
 import types
 import argparse
 import urllib.request
@@ -38,6 +39,210 @@ import numpy as np
 def eprint(*a, **k):
     """Diagnostics to stderr only — stdout is the driver's reserved channel."""
     print(*a, file=sys.stderr, **k)
+
+
+def clean_markdown_for_speech(text: str) -> str:
+    """Transform Markdown formatting into clean, natural spoken prose so TTS
+    engines never read formatting symbols ('asterisk asterisk asterisk', 'hash',
+    'backtick') aloud, while preserving clause and line structure."""
+    if not text:
+        return ""
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # 1. Strip fenced code block markers (keep inner content)
+    t = re.sub(r"^\s*```[^\n]*\n?", "\n", t, flags=re.MULTILINE)
+
+    # 2. Replace horizontal rules (***, ---, ___, * * *) with paragraph breaks
+    t = re.sub(r"^\s*(?:[*_\-]\s*){3,}\s*$", "\n\n", t, flags=re.MULTILINE)
+    t = re.sub(r"(?:^|\s)\*{3,}(?:\s|$)", "\n\n", t)
+
+    # 3. Remove markdown table divider rows (|---|---|) and turn cell pipes into commas
+    t = re.sub(r"^\s*\|?[\s:\-|]+\|[\s:\-|]*$", "", t, flags=re.MULTILINE)
+    t = re.sub(r"^\s*\|\s*|\s*\|\s*$", "", t, flags=re.MULTILINE)
+    t = re.sub(r"\s*\|\s*", ", ", t)
+
+    # 4. Convert images ![alt](url) -> alt and links [label](url) -> label
+    t = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", t)
+    t = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", t)
+
+    # 5. Simplify bare URLs to domain name so TTS doesn't spell out long paths
+    t = re.sub(r"https?://(?:www\.)?([^/\s)\]>]+)[^\s)\]>]*", r"\1", t)
+
+    # 6. Convert headings (# Heading) into clean pause-terminated lines
+    def _fmt_heading(m):
+        content = m.group(1).strip()
+        if content and content[-1] not in ".!?:;—–-":
+            return content + ":"
+        return content
+
+    t = re.sub(r"^\s*#{1,6}\s+(.+?)\s*#*$", _fmt_heading, t, flags=re.MULTILINE)
+
+    # 7. Strip blockquote '>' and bullet list markers (-, *, +, •) at start of lines
+    t = re.sub(r"^\s*>\s*", "", t, flags=re.MULTILINE)
+    t = re.sub(r"^\s*[-*+•]\s+", "", t, flags=re.MULTILINE)
+
+    # 8. Strip bold, italic, strikethrough, and inline code delimiters
+    for _ in range(2):
+        t = re.sub(r"\*{1,3}([^*\n]+?)\*{1,3}", r"\1", t)
+        t = re.sub(r"\b_{1,3}([^_\n]+?)_{1,3}\b", r"\1", t)
+        t = re.sub(r"~~([^~\n]+?)~~", r"\1", t)
+        t = re.sub(r"`+([^`\n]+?)`+", r"\1", t)
+
+    # 9. Remove any leftover raw asterisks, backticks, or heading hashes
+    t = re.sub(r"\*+", "", t)
+    t = re.sub(r"`+", "", t)
+    t = re.sub(r"(?:^|\s)#+(?=\s|$)", " ", t)
+
+    # 10. Clean up multiple spaces while preserving newlines
+    lines = []
+    for line in t.split("\n"):
+        cleaned_line = re.sub(r"\s+", " ", line).strip()
+        if cleaned_line:
+            lines.append(cleaned_line)
+    return "\n".join(lines)
+
+
+def split_into_clauses(cleaned_text: str) -> list[str]:
+    """Split cleaned text into natural prosodic clauses so each clause is synthesized
+    with an exact sample-accurate start and end timestamp."""
+    raw_lines = [ln.strip() for ln in cleaned_text.split("\n") if ln.strip()]
+    clauses = []
+
+    for line in raw_lines:
+        # First split on sentence/major clause punctuation
+        major_parts = re.split(r"(?<=[.!?;:…—–])\s+", line)
+        for mp in major_parts:
+            mp = mp.strip()
+            if not mp:
+                continue
+            # Split on commas if the clause has >= 4 words
+            comma_parts = re.split(r"(?<=,)\s+", mp)
+            acc = []
+            acc_words = 0
+            for cp in comma_parts:
+                cp = cp.strip()
+                if not cp:
+                    continue
+                w_len = len(cp.split())
+                if acc and (acc_words >= 4 or acc_words + w_len > 12):
+                    clauses.append(" ".join(acc))
+                    acc = [cp]
+                    acc_words = w_len
+                else:
+                    acc.append(cp)
+                    acc_words += w_len
+            if acc:
+                clauses.append(" ".join(acc))
+
+    # Sub-split any remaining long unpunctuated clauses (> 14 words)
+    final_clauses = []
+    for c in clauses:
+        words = c.split()
+        if len(words) <= 14:
+            final_clauses.append(c)
+        else:
+            curr = []
+            for w in words:
+                curr.append(w)
+                if len(curr) >= 10 and w.lower() in ("and", "but", "or", "which", "that", "because", "so", "when", "where", "while"):
+                    # Keep conjunction with next clause if possible
+                    if len(curr) > 1:
+                        final_clauses.append(" ".join(curr[:-1]))
+                        curr = [w]
+                elif len(curr) >= 12:
+                    final_clauses.append(" ".join(curr))
+                    curr = []
+            if curr:
+                if final_clauses and len(curr) <= 2:
+                    final_clauses[-1] = final_clauses[-1] + " " + " ".join(curr)
+                else:
+                    final_clauses.append(" ".join(curr))
+
+    return [c.strip() for c in final_clauses if c.strip()]
+
+
+def synthesize_with_timings(kokoro, text: str, voice_arg, speed: float = 1.0, lang: str = "en-us"):
+    """Synthesize text clause-by-clause, returning (samples, sample_rate, timing_meta).
+    Every clause's start, speech_end, and end timestamp is measured directly from
+    Kokoro's output sample array (len(audio_part) / 24000.0) so visual captions
+    stay 100% locked to the audio with zero cumulative drift."""
+    cleaned = clean_markdown_for_speech(text)
+    if not cleaned.strip():
+        cleaned = text.strip()
+
+    clauses = split_into_clauses(cleaned)
+    if not clauses:
+        clauses = [cleaned]
+
+    sample_rate = 24000
+    all_parts = []
+    timing_clauses = []
+    curr_samples = 0
+
+    for idx, clause in enumerate(clauses):
+        try:
+            phonemes = kokoro.tokenizer.phonemize(clause, lang)
+        except Exception:
+            phonemes = ""
+        if not phonemes or not phonemes.strip():
+            continue
+
+        part_samples, sample_rate = kokoro.create(clause, voice=voice_arg, speed=speed, lang=lang)
+        if part_samples is None or len(part_samples) == 0:
+            continue
+
+        start_sec = curr_samples / sample_rate
+        speech_end_sec = (curr_samples + len(part_samples)) / sample_rate
+
+        # Natural prosodic breath pause between clauses
+        if idx < len(clauses) - 1:
+            if clause.endswith((".", "!", "?")):
+                pause_sec = 0.14
+            elif clause.endswith((":", ";", "—", "–")):
+                pause_sec = 0.09
+            elif clause.endswith(","):
+                pause_sec = 0.05
+            else:
+                pause_sec = 0.03
+            pause_samples = np.zeros(int(pause_sec * sample_rate), dtype=np.float32)
+        else:
+            pause_samples = np.zeros(0, dtype=np.float32)
+
+        end_sec = (curr_samples + len(part_samples) + len(pause_samples)) / sample_rate
+
+        all_parts.append(part_samples)
+        if len(pause_samples) > 0:
+            all_parts.append(pause_samples)
+
+        curr_samples += len(part_samples) + len(pause_samples)
+        timing_clauses.append({
+            "text": clause,
+            "words": clause.split(),
+            "start": round(start_sec, 4),
+            "speech_end": round(speech_end_sec, 4),
+            "end": round(end_sec, 4),
+        })
+
+    if not all_parts:
+        samples, sample_rate = kokoro.create(cleaned, voice=voice_arg, speed=speed, lang=lang)
+        total_dur = len(samples) / sample_rate
+        timing_clauses = [{
+            "text": cleaned,
+            "words": cleaned.split(),
+            "start": 0.0,
+            "speech_end": round(total_dur, 4),
+            "end": round(total_dur, 4),
+        }]
+    else:
+        samples = np.concatenate(all_parts)
+
+    timing_meta = {
+        "sample_rate": sample_rate,
+        "total_duration": round(len(samples) / sample_rate, 4),
+        "cleaned_text": " ".join(c["text"] for c in timing_clauses),
+        "clauses": timing_clauses,
+    }
+    return samples, sample_rate, timing_meta
 
 
 def patch_kokoro_phoneme_split(kokoro):
@@ -331,9 +536,11 @@ def main():
     # Kokoro expects a lang code like "en-us"/"en-gb"; the driver supplies it.
     lang = (args.language_code or "en-us").lower()
 
-    # Synthesize.
+    # Synthesize with per-clause timing and Markdown cleaning.
     try:
-        samples, sample_rate = kokoro.create(text, voice=voice_arg, speed=1.0, lang=lang)
+        samples, sample_rate, timing_meta = synthesize_with_timings(
+            kokoro, text, voice_arg=voice_arg, speed=1.0, lang=lang
+        )
     except Exception as e:
         fail(f"synthesis failed: {e}")
 
@@ -346,10 +553,12 @@ def main():
     except Exception as e:
         fail(f"writing WAV failed: {e}")
 
-    # Success sidecar + clear any stale .err (idempotency, CONTRACT §5.5).
+    # Success sidecar + per-clause timing sidecar + clear any stale .err
     try:
         with open(tokens_path, "w") as f:
             f.write("local")
+        with open(out + ".timing.json", "w") as f:
+            json.dump(timing_meta, f)
         if os.path.exists(err_path):
             os.remove(err_path)
     except Exception:

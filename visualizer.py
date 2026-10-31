@@ -13,6 +13,7 @@ Calculates acoustic RMS amplitude from WAV samples and renders a clean, borderle
 import sys
 import os
 import re
+import json
 import time
 import math
 import wave
@@ -51,6 +52,47 @@ def pad_to(content, target_w):
     curr = visual_width(content)
     pad = max(0, target_w - curr)
     return content + (" " * pad)
+
+def clean_markdown_for_speech(text):
+    """Strip Markdown formatting tokens (***, **, #, `, links, tables) so visual
+    captions and spoken words match 1-to-1 without raw syntax noise."""
+    if not text:
+        return ""
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    t = re.sub(r"^\s*```[^\n]*\n?", "\n", t, flags=re.MULTILINE)
+    t = re.sub(r"^\s*(?:[*_\-]\s*){3,}\s*$", "\n\n", t, flags=re.MULTILINE)
+    t = re.sub(r"(?:^|\s)\*{3,}(?:\s|$)", "\n\n", t)
+    t = re.sub(r"^\s*\|?[\s:\-|]+\|[\s:\-|]*$", "", t, flags=re.MULTILINE)
+    t = re.sub(r"^\s*\|\s*|\s*\|\s*$", "", t, flags=re.MULTILINE)
+    t = re.sub(r"\s*\|\s*", ", ", t)
+    t = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", t)
+    t = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", t)
+    t = re.sub(r"https?://(?:www\.)?([^/\s)\]>]+)[^\s)\]>]*", r"\1", t)
+
+    def _fmt_heading(m):
+        content = m.group(1).strip()
+        if content and content[-1] not in ".!?:;—–-":
+            return content + ":"
+        return content
+
+    t = re.sub(r"^\s*#{1,6}\s+(.+?)\s*#*$", _fmt_heading, t, flags=re.MULTILINE)
+    t = re.sub(r"^\s*>\s*", "", t, flags=re.MULTILINE)
+    t = re.sub(r"^\s*[-*+•]\s+", "", t, flags=re.MULTILINE)
+    for _ in range(2):
+        t = re.sub(r"\*{1,3}([^*\n]+?)\*{1,3}", r"\1", t)
+        t = re.sub(r"\b_{1,3}([^_\n]+?)_{1,3}\b", r"\1", t)
+        t = re.sub(r"~~([^~\n]+?)~~", r"\1", t)
+        t = re.sub(r"`+([^`\n]+?)`+", r"\1", t)
+    t = re.sub(r"\*+", "", t)
+    t = re.sub(r"`+", "", t)
+    t = re.sub(r"(?:^|\s)#+(?=\s|$)", " ", t)
+
+    lines = []
+    for line in t.split("\n"):
+        cleaned_line = re.sub(r"\s+", " ", line).strip()
+        if cleaned_line:
+            lines.append(cleaned_line)
+    return "\n".join(lines)
 
 def wrap_text_into_lines(words, max_chars=54):
     """
@@ -123,13 +165,9 @@ def estimate_syllables(w):
         count = max(1, count - 1)
     return max(1, count)
 
-def compute_line_timings(words, line_groups, total_duration, speech_start=0.0):
-    """
-    Computes [start_time, end_time] for each line using per-word syllable
-    estimation and punctuation pause anchors.
-    Ensures zero cumulative drift against the audio playback.
-    """
-    if not words or not line_groups:
+def compute_word_timings_fallback(words, total_duration, speech_start=0.0):
+    """Fallback per-word [start_time, end_time] when no engine .timing.json sidecar exists."""
+    if not words:
         return []
 
     word_weights = []
@@ -139,9 +177,9 @@ def compute_line_timings(words, line_groups, total_duration, speech_start=0.0):
         word_weights.append(syl * 1.0)
         p_weight = 0.0
         if w.endswith((".", "!", "?")):
-            p_weight = 3.5  # ~600-800ms sentence boundary pause in TTS
+            p_weight = 3.2
         elif w.endswith((",", ";", ":", "—", "-")):
-            p_weight = 1.8  # ~300-400ms clause boundary pause in TTS
+            p_weight = 1.6
         pause_weights.append(p_weight)
 
     total_w = sum(word_weights) + sum(pause_weights)
@@ -156,15 +194,106 @@ def compute_line_timings(words, line_groups, total_duration, speech_start=0.0):
         word_timings.append((curr_t, curr_t + w_dur))
         curr_t += w_dur + p_dur
 
-    line_timings = []
-    w_idx = 0
-    for line in line_groups:
-        st = word_timings[w_idx][0] if w_idx < len(word_timings) else total_duration
-        w_idx += len(line)
-        et = word_timings[w_idx][0] if w_idx < len(word_timings) else total_duration
-        line_timings.append((st, et))
+    return word_timings
 
-    return line_timings
+
+def build_clauses_and_timings_from_sidecar(timing_path, caption_char_limit, total_duration, speech_start=0.0, raw_transcript=""):
+    """Load exact per-clause timestamps from <wav>.timing.json (written by Kokoro)
+    so every clause's words are anchored to the exact sample boundaries in the WAV."""
+    if os.path.exists(timing_path):
+        try:
+            with open(timing_path, "r") as f:
+                meta = json.load(f)
+            clauses = meta.get("clauses") or []
+            if clauses:
+                words = []
+                line_groups = []
+                word_timings = []
+                for c in clauses:
+                    c_words = c.get("words") or (c.get("text", "").split())
+                    if not c_words:
+                        continue
+                    c_start = float(c.get("start", 0.0))
+                    c_end = float(c.get("speech_end", c.get("end", c_start + 0.1)))
+                    c_dur = max(0.02, c_end - c_start)
+
+                    # Wrap this clause into lines that fit the terminal width
+                    c_lines = wrap_text_into_lines(c_words, max_chars=caption_char_limit)
+                    line_groups.extend(c_lines)
+                    words.extend(c_words)
+
+                    # Distribute clause's exact [c_start, c_end] across its words by syllable weight
+                    weights = [max(1.0, float(estimate_syllables(w))) for w in c_words]
+                    tot_w = sum(weights)
+                    t_cursor = c_start
+                    for w_weight in weights:
+                        w_dur = c_dur * (w_weight / tot_w)
+                        word_timings.append((t_cursor, t_cursor + w_dur))
+                        t_cursor += w_dur
+
+                if words and line_groups and word_timings:
+                    return words, line_groups, word_timings
+        except Exception:
+            pass
+
+    # Fallback: clean markdown from raw_transcript and estimate timings
+    cleaned = clean_markdown_for_speech(raw_transcript) if raw_transcript else ""
+    words = cleaned.split() if cleaned else []
+    line_groups = wrap_text_into_lines(words, max_chars=caption_char_limit) if words else []
+    word_timings = compute_word_timings_fallback(words, total_duration, speech_start=speech_start)
+    return words, line_groups, word_timings
+
+
+def find_active_word_position(words, line_groups, word_timings, elapsed, duration):
+    """Locate (curr_word_idx, active_line_idx, active_word_in_line) from exact word_timings."""
+    if not words or not line_groups:
+        return 0, 0, 0
+
+    total_words = len(words)
+    curr_word_idx = 0
+
+    if word_timings and len(word_timings) == total_words:
+        # Find the latest word whose start_time <= elapsed
+        for idx, (w_start, w_end) in enumerate(word_timings):
+            if elapsed >= w_start:
+                curr_word_idx = idx
+            else:
+                break
+    else:
+        ratio = min(1.0, elapsed / duration) if duration > 0 else 0
+        curr_word_idx = min(total_words - 1, max(0, int(ratio * total_words)))
+
+    word_counter = 0
+    active_line_idx = 0
+    active_word_in_line = 0
+    for l_idx, line in enumerate(line_groups):
+        line_word_count = len(line)
+        if word_counter + line_word_count > curr_word_idx:
+            active_line_idx = l_idx
+            active_word_in_line = curr_word_idx - word_counter
+            break
+        word_counter += line_word_count
+        if l_idx == len(line_groups) - 1:
+            active_line_idx = l_idx
+            active_word_in_line = line_word_count - 1
+
+    return curr_word_idx, active_line_idx, active_word_in_line
+
+
+def render_active_line(line_words, active_word_in_line, highlight_mode="word", emphasis="bold"):
+    active_style = EMPHASIS_STYLES.get(emphasis.lower(), EMPHASIS_STYLES["bold"])
+    if highlight_mode == "line":
+        return f"\033[1;38;2;0;255;255m{' '.join(line_words)}{RESET}"
+    styled = []
+    for w_i, w in enumerate(line_words):
+        if w_i < active_word_in_line:
+            styled.append(f"\033[38;2;0;190;205m{w}{RESET}")
+        elif w_i == active_word_in_line:
+            styled.append(f"{active_style}{w}{RESET}")
+        else:
+            styled.append(f"\033[38;2;0;105;120m{w}{RESET}")
+    return " ".join(styled)
+
 
 EMPHASIS_STYLES = {
     "bold": "\033[1;38;2;0;255;255m",
@@ -193,41 +322,17 @@ def get_voice_color(voice_name):
             pass
     return "\033[36m"
 
-def get_scrolling_caption_lines(words, line_groups, elapsed, duration, num_lines=3, highlight_mode="word", emphasis="bold"):
+def get_scrolling_caption_lines(words, line_groups, word_timings, elapsed, duration, num_lines=3, highlight_mode="word", emphasis="bold"):
     """
-    Renders num_lines of closed captioning text centered on the active spoken word.
-    In word mode (default / original):
-    - Uses continuous audio ratio (elapsed / duration) mapped smoothly to word index
-    - Active line is the line containing the current word
-    - Current word glows with emphasis style (default: bold electric cyan, no underline)
-    - Past words & past lines: soft legible cyan
-    - Future words & future lines: dim cyan
+    Renders num_lines of closed captioning text centered on the active spoken word (window mode).
     """
     if not words or not line_groups:
         return [""] * num_lines
 
-    active_style = EMPHASIS_STYLES.get(emphasis.lower(), EMPHASIS_STYLES["bold"])
+    _, active_line_idx, active_word_in_line = find_active_word_position(
+        words, line_groups, word_timings, elapsed, duration
+    )
 
-    ratio = min(1.0, elapsed / duration) if duration > 0 else 0
-    total_words = len(words)
-    curr_word_idx = min(total_words - 1, max(0, int(ratio * total_words)))
-
-    # Locate which line contains curr_word_idx
-    word_counter = 0
-    active_line_idx = 0
-    active_word_in_line = 0
-    for l_idx, line in enumerate(line_groups):
-        line_word_count = len(line)
-        if word_counter + line_word_count > curr_word_idx:
-            active_line_idx = l_idx
-            active_word_in_line = curr_word_idx - word_counter
-            break
-        word_counter += line_word_count
-        if l_idx == len(line_groups) - 1:
-            active_line_idx = l_idx
-            active_word_in_line = line_word_count - 1
-
-    # Center active_line_idx in the num_lines window
     half = num_lines // 2
     start_line_idx = active_line_idx - half
 
@@ -241,30 +346,17 @@ def get_scrolling_caption_lines(words, line_groups, elapsed, duration, num_lines
             text_raw = " ".join(line_words)
 
             if target_idx < active_line_idx:
-                # Past line: soft legible cyan
                 rendered_lines.append(f"\033[38;2;0;190;205m{text_raw}{RESET}")
             elif target_idx > active_line_idx:
-                # Future line: dim cyan
                 rendered_lines.append(f"\033[38;2;0;105;120m{text_raw}{RESET}")
             else:
-                # Active line
-                if highlight_mode == "line":
-                    rendered_lines.append(f"\033[1;38;2;0;255;255m{text_raw}{RESET}")
-                else:
-                    # Word-by-word highlight (original karaoke style)
-                    styled = []
-                    for w_i, w in enumerate(line_words):
-                        if w_i < active_word_in_line:
-                            styled.append(f"\033[38;2;0;190;205m{w}{RESET}")
-                        elif w_i == active_word_in_line:
-                            styled.append(f"{active_style}{w}{RESET}")
-                        else:
-                            styled.append(f"\033[38;2;0;105;120m{w}{RESET}")
-                    rendered_lines.append(" ".join(styled))
+                rendered_lines.append(
+                    render_active_line(line_words, active_word_in_line, highlight_mode=highlight_mode, emphasis=emphasis)
+                )
 
     return rendered_lines
 
-def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, highlight_mode="word", emphasis="bold", mock_audio=False):
+def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, highlight_mode="word", emphasis="bold", view_mode="scroll", mock_audio=False):
     if not os.path.exists(wav_path):
         print(f"File not found: {wav_path}", file=sys.stderr)
         return 1
@@ -314,7 +406,25 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
         if rms > max_rms:
             max_rms = rms
 
-    words = transcript.strip().split() if transcript else []
+    # Determine safe wrap width based on terminal size (adaptive to narrow panes)
+    term_cols = shutil.get_terminal_size((80, 24)).columns
+    caption_char_limit = max(24, min(72, term_cols - 4))
+
+    # Detect acoustic speech onset from audio samples
+    speech_start = 0.0
+    for idx, val in enumerate(rms_values):
+        if val > 0.04 * max_rms:
+            speech_start = idx / fps
+            break
+
+    # Load exact per-clause timings from <wav_path>.timing.json if available, else fallback
+    words, line_groups, word_timings = build_clauses_and_timings_from_sidecar(
+        wav_path + ".timing.json",
+        caption_char_limit=caption_char_limit,
+        total_duration=duration,
+        speech_start=speech_start,
+        raw_transcript=transcript,
+    )
 
     player = None
     if not mock_audio:
@@ -329,21 +439,6 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
 
     start_time = time.monotonic()
 
-    # Determine safe wrap width based on terminal size (adaptive to narrow panes)
-    term_cols = shutil.get_terminal_size((80, 24)).columns
-    caption_char_limit = max(24, min(72, term_cols - 4))
-
-    # Detect acoustic speech onset from audio samples
-    speech_start = 0.0
-    for idx, val in enumerate(rms_values):
-        if val > 0.04 * max_rms:
-            speech_start = idx / fps
-            break
-
-    # Pre-calculate line groups and per-word phonetic timings
-    line_groups = wrap_text_into_lines(words, max_chars=caption_char_limit) if words else []
-    line_timings = compute_line_timings(words, line_groups, duration, speech_start=speech_start) if line_groups else []
-
     # Clean voice display name and color badge
     clean_voice = voice_name
     if clean_voice.lower().startswith("af_") or clean_voice.lower().startswith("am_"):
@@ -356,9 +451,10 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
     sys.stderr.write("\033[?25l")
     sys.stderr.flush()
 
-    # Total in-place refresh lines:
-    # 1 (pad top) + num_lines (captions) + 1 (pad bot) + 1 (telemetry)
-    total_refresh_lines = 1 + num_lines + 1 + 1
+    is_scroll_view = (view_mode.lower() == "scroll")
+    # In scroll view: active line + 1 lookahead line + 1 blank line + 1 telemetry line = 4 lines
+    # In window view: 1 top pad + num_lines + 1 bot pad + 1 telemetry line
+    total_refresh_lines = 4 if is_scroll_view else (1 + num_lines + 1 + 1)
 
     def cleanup_signal(signum, frame):
         if player and player.poll() is None:
@@ -370,10 +466,15 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
     signal.signal(signal.SIGINT, cleanup_signal)
     signal.signal(signal.SIGTERM, cleanup_signal)
 
-    # State variables for hysteresis & smoothing
     last_talk_time = 0.0
     smoothed_rms = 0.0
-    HOLD_TIME = 0.35  # 350ms hold window to prevent flickering between words
+    HOLD_TIME = 0.35
+    printed_up_to = 0
+
+    if is_scroll_view:
+        # Initial breathing line before the scrolling transcript begins
+        sys.stderr.write("\n")
+        sys.stderr.flush()
 
     try:
         while True:
@@ -386,10 +487,8 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
             cur_rms = rms_values[chunk_idx] if chunk_idx < len(rms_values) else 0.0
             norm_rms = min(1.0, cur_rms / (max_rms * 0.85 + 1e-5))
 
-            # VU meter smoothing (smooth peak decay)
             smoothed_rms = max(norm_rms, smoothed_rms * 0.72)
 
-            # Beacon state: solid steady PLAY during playback (no rapid word toggling)
             if norm_rms > 0.05 or elapsed - last_talk_time < HOLD_TIME:
                 beacon = f"{GREEN}● PLAY{RESET}"
                 if norm_rms > 0.05:
@@ -397,22 +496,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
             else:
                 beacon = f"{DIM}○ IDLE{RESET}"
 
-            frame_lines = []
-
-            # 1. Padding space ABOVE closed captioning
-            frame_lines.append("")
-
-            # 2. Scrolling closed captioning lines (word-for-word karaoke tracking)
-            caption_lines = get_scrolling_caption_lines(
-                words, line_groups, elapsed, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
-            )
-            for c_line in caption_lines:
-                frame_lines.append(f"  {c_line}")
-
-            # 3. Padding space BELOW closed captioning
-            frame_lines.append("")
-
-            # 4. Telemetry Line (Adaptive width for narrow terminal panes)
+            # Telemetry Line (Adaptive width for narrow terminal panes)
             meter_len = 10 if term_cols >= 65 else (8 if term_cols >= 50 else 6)
             track_len = 14 if term_cols >= 70 else (10 if term_cols >= 55 else 8)
 
@@ -444,14 +528,56 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
                 time_str = f"{cur_m:02d}:{cur_s:02d}"
 
             telem_content = f"  {voice_badge}  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
-            frame_lines.append(telem_content)
 
-            # Write all lines in place (NO trailing newline after last line!)
-            output_str = "\n".join([f"\r\033[K{line}" for line in frame_lines])
-            sys.stderr.write(output_str)
-            # Move cursor back up to Line 1 (pad_top). Zero terminal scrolling!
-            sys.stderr.write(f"\033[{total_refresh_lines - 1}A\r")
-            sys.stderr.flush()
+            if is_scroll_view:
+                if line_groups:
+                    _, active_line_idx, active_word_in_line = find_active_word_position(
+                        words, line_groups, word_timings, elapsed, duration
+                    )
+                    # Permanently commit any completed lines to the terminal's native scrollback
+                    while printed_up_to < active_line_idx:
+                        done_line = " ".join(line_groups[printed_up_to])
+                        sys.stderr.write(f"\r\033[K  \033[38;2;0;190;205m{done_line}{RESET}\n")
+                        printed_up_to += 1
+
+                    active_rendered = render_active_line(
+                        line_groups[active_line_idx],
+                        active_word_in_line,
+                        highlight_mode=highlight_mode,
+                        emphasis=emphasis,
+                    )
+                    if active_line_idx + 1 < len(line_groups):
+                        next_rendered = f"\033[38;2;0;105;120m{' '.join(line_groups[active_line_idx + 1])}{RESET}"
+                    else:
+                        next_rendered = ""
+                else:
+                    active_rendered = ""
+                    next_rendered = ""
+
+                frame_lines = [
+                    f"  {active_rendered}",
+                    f"  {next_rendered}",
+                    "",
+                    telem_content,
+                ]
+                output_str = "\n".join([f"\r\033[K{line}" for line in frame_lines])
+                sys.stderr.write(output_str)
+                sys.stderr.write(f"\033[{total_refresh_lines - 1}A\r")
+                sys.stderr.flush()
+            else:
+                frame_lines = [""]
+                caption_lines = get_scrolling_caption_lines(
+                    words, line_groups, word_timings, elapsed, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
+                )
+                for c_line in caption_lines:
+                    frame_lines.append(f"  {c_line}")
+                frame_lines.append("")
+                frame_lines.append(telem_content)
+
+                output_str = "\n".join([f"\r\033[K{line}" for line in frame_lines])
+                sys.stderr.write(output_str)
+                sys.stderr.write(f"\033[{total_refresh_lines - 1}A\r")
+                sys.stderr.flush()
 
             target_time = start_time + (chunk_idx + 1) / fps
             sleep_dur = target_time - time.monotonic()
@@ -465,21 +591,26 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
         tot_m, tot_s = divmod(int(duration), 60)
         time_str = f"{tot_m:02d}:{tot_s:02d}"
 
-        fin_lines = []
-        fin_lines.append("")
+        if is_scroll_view:
+            while printed_up_to < len(line_groups):
+                done_line = " ".join(line_groups[printed_up_to])
+                sys.stderr.write(f"\r\033[K  \033[38;2;0;190;205m{done_line}{RESET}\n")
+                printed_up_to += 1
+            sys.stderr.write(f"\r\033[K\n\r\033[K  {voice_badge}  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})\n")
+            sys.stderr.flush()
+        else:
+            fin_lines = [""]
+            fin_caption_lines = get_scrolling_caption_lines(
+                words, line_groups, word_timings, duration, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
+            )
+            for c_line in fin_caption_lines:
+                fin_lines.append(f"  {c_line}")
+            fin_lines.append("")
+            fin_lines.append(f"  {voice_badge}  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})")
 
-        fin_caption_lines = get_scrolling_caption_lines(
-            words, line_groups, duration, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
-        )
-        for c_line in fin_caption_lines:
-            fin_lines.append(f"  {c_line}")
-
-        fin_lines.append("")
-        fin_lines.append(f"  {voice_badge}  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})")
-
-        output_fin = "\n".join([f"\r\033[K{line}" for line in fin_lines])
-        sys.stderr.write(f"{output_fin}\n")
-        sys.stderr.flush()
+            output_fin = "\n".join([f"\r\033[K{line}" for line in fin_lines])
+            sys.stderr.write(f"{output_fin}\n")
+            sys.stderr.flush()
 
     finally:
         # Restore terminal cursor and clear title
@@ -491,7 +622,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: visualizer.py <audio.wav> [voice_name] [transcript] [-l|--lines 1-8] [--highlight line|word] [--mock]", file=sys.stderr)
+        print("Usage: visualizer.py <audio.wav> [voice_name] [transcript] [-l|--lines 1-8] [--highlight line|word] [--view scroll|window] [--mock]", file=sys.stderr)
         sys.exit(1)
 
     wav = sys.argv[1]
@@ -500,6 +631,7 @@ if __name__ == "__main__":
     lines_val = 3
     hl_mode = "word"
     emphasis_val = os.environ.get("SPEAK_EMPHASIS", "bold").lower()
+    view_val = os.environ.get("SPEAK_VIEW", "scroll").lower()
     lead_val = 65
     mock = "--mock" in sys.argv
 
@@ -539,6 +671,19 @@ if __name__ == "__main__":
             emphasis_val = arg.split("=", 1)[1].lower()
             if emphasis_val not in EMPHASIS_STYLES:
                 emphasis_val = "bold"
+        elif arg == "--view" and idx + 1 < len(sys.argv):
+            view_val = sys.argv[idx + 1].lower()
+            if view_val not in ("scroll", "window"):
+                view_val = "scroll"
+            skip_next = True
+        elif arg.startswith("--view="):
+            view_val = arg.split("=", 1)[1].lower()
+            if view_val not in ("scroll", "window"):
+                view_val = "scroll"
+        elif arg == "--scroll":
+            view_val = "scroll"
+        elif arg == "--window":
+            view_val = "window"
         elif arg == "--lead" and idx + 1 < len(sys.argv):
             try:
                 lead_val = max(0, int(sys.argv[idx + 1]))
@@ -557,4 +702,4 @@ if __name__ == "__main__":
         elif not transcript_arg:
             transcript_arg = arg
 
-    sys.exit(play_with_hud(wav, name, transcript=transcript_arg, num_lines=lines_val, highlight_mode=hl_mode, emphasis=emphasis_val, mock_audio=mock))
+    sys.exit(play_with_hud(wav, name, transcript=transcript_arg, num_lines=lines_val, highlight_mode=hl_mode, emphasis=emphasis_val, view_mode=view_val, mock_audio=mock))

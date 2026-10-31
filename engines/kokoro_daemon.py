@@ -32,6 +32,9 @@ import types
 import numpy as np
 
 
+from kokoro import clean_markdown_for_speech, split_into_clauses, synthesize_with_timings
+
+
 def eprint(*a, **k):
     print(*a, file=sys.stderr, **k)
 
@@ -245,16 +248,20 @@ class KokoroDaemon:
                     blended = term if blended is None else blended + term
                 voice_arg = blended
 
-            # Synthesize
-            samples, sample_rate = self.kokoro.create(text, voice=voice_arg, speed=1.0, lang=lang)
+            # Synthesize with per-clause timing and Markdown cleaning
+            samples, sample_rate, timing_meta = synthesize_with_timings(
+                self.kokoro, text, voice_arg=voice_arg, speed=1.0, lang=lang
+            )
 
             # Write WAV
             sf.write(out_path, samples, sample_rate)
 
-            # Write tokens sidecar
+            # Write tokens + timing sidecars
             tokens_path = out_path + ".tokens"
             with open(tokens_path, "w") as f:
                 f.write("local\n")
+            with open(out_path + ".timing.json", "w") as f:
+                json.dump(timing_meta, f)
 
             # Clean up any leftover .err
             err_path = out_path + ".err"
