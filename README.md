@@ -278,7 +278,7 @@ During playback, `speak` renders a borderless, adaptive teleprompter that auto-s
 
 ```bash
 python3 web_ui.py
-# Open http://127.0.0.1:8420
+# Open http://127.0.0.1:2420
 ```
 
 - **Introspection (`GET /api/schema`):** Parses `./speak --help`, `voices.yaml`, `engines.yaml`, and `~/.config/speak/config` in read-only mode to dynamically populate subcommands, flags, engines, and 30+ voices.

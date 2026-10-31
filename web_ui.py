@@ -534,7 +534,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run the non-invasive speak Web UI Sidecar")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
+    parser.add_argument("--port", type=int, default=2420, help="Bind port (default: 2420)")
     args = parser.parse_args()
 
     print(f"  speak Web UI Sidecar listening on http://{args.host}:{args.port}", file=sys.stderr)
