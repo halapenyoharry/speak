@@ -241,6 +241,66 @@ def probe_wav_file(wav_path: Path) -> Dict[str, Any]:
     return info
 
 
+@app.get("/api/queue")
+async def get_cli_queue() -> JSONResponse:
+    """Delegate queue listing to the CLI (`./speak queue list --json`)."""
+    proc = await asyncio.create_subprocess_exec(
+        str(SPEAK_BIN),
+        "queue",
+        "list",
+        "--json",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(BASE_DIR),
+    )
+    stdout_bytes, stderr_bytes = await proc.communicate()
+    if proc.returncode != 0:
+        err_msg = strip_ansi(stderr_bytes.decode("utf-8", errors="replace")).strip()
+        raise HTTPException(status_code=500, detail=err_msg or "Failed to load CLI queue")
+    try:
+        data = json.loads(stdout_bytes.decode("utf-8", errors="replace"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid CLI queue JSON: {exc}")
+    return JSONResponse(data)
+
+
+@app.post("/api/queue/state")
+async def update_cli_queue_state(request: Request) -> JSONResponse:
+    """Delegate queue item state & remembered position updates to `./speak queue state`."""
+    body = await request.json()
+    item_id = str(body.get("id", "")).strip()
+    if not item_id:
+        raise HTTPException(status_code=400, detail="Missing queue item `id`")
+
+    cmd_args = ["queue", "state", item_id]
+    if "position_seconds" in body and body["position_seconds"] is not None:
+        cmd_args.extend(["--position", str(float(body["position_seconds"]))])
+    if "played" in body and body["played"] is not None:
+        cmd_args.extend(["--played", "true" if body["played"] else "false"])
+    if "status" in body and body["status"]:
+        cmd_args.extend(["--status", str(body["status"])])
+    if body.get("active"):
+        cmd_args.append("--active")
+    cmd_args.append("--json")
+
+    proc = await asyncio.create_subprocess_exec(
+        str(SPEAK_BIN),
+        *cmd_args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(BASE_DIR),
+    )
+    stdout_bytes, stderr_bytes = await proc.communicate()
+    if proc.returncode != 0:
+        err_msg = strip_ansi(stderr_bytes.decode("utf-8", errors="replace")).strip()
+        raise HTTPException(status_code=400, detail=err_msg or "Failed to update CLI queue state")
+    try:
+        data = json.loads(stdout_bytes.decode("utf-8", errors="replace"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid CLI queue JSON: {exc}")
+    return JSONResponse(data)
+
+
 @app.get("/api/outputs")
 async def list_outputs() -> JSONResponse:
     """List generated WAV files in `outputs/` and workspace root."""
@@ -374,7 +434,7 @@ async def run_cli(request: Request) -> StreamingResponse:
                 output_wav_path = OUTPUTS_DIR / safe_custom
             else:
                 output_wav_path = OUTPUTS_DIR / f"speak_{ts}_{v_slug}.wav"
-            args.extend(["-o", str(output_wav_path)])
+            args.extend(["-Q", "-o", str(output_wav_path)])
 
         if transcript_text and not body.get("clipboard"):
             args.append(transcript_text)
@@ -489,31 +549,46 @@ async def run_cli(request: Request) -> StreamingResponse:
                 except Exception:
                     pass
 
-            sidecar_data = {
-                "filename": output_wav_path.name,
-                "voice": voice or read_user_config().get("persona", "puck"),
-                "engine": engine or read_user_config().get("engine", "kokoro"),
-                "transcript": timing_data.get("cleaned_text", transcript_text) if timing_data else transcript_text,
-                "command": cmd_display,
-                "duration_seconds": wav_meta["duration_seconds"],
-                "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
-                "timing": timing_data,
-            }
+            sidecar_path = output_wav_path.with_suffix(".json")
+            sidecar_data: Dict[str, Any] = {}
+            if sidecar_path.exists():
+                try:
+                    sidecar_data = json.loads(sidecar_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            if not sidecar_data:
+                sidecar_data = {
+                    "id": output_wav_path.stem,
+                    "filename": output_wav_path.name,
+                    "voice": voice or read_user_config().get("persona", "puck"),
+                    "engine": engine or read_user_config().get("engine", "kokoro"),
+                    "transcript": timing_data.get("cleaned_text", transcript_text) if timing_data else transcript_text,
+                    "duration_seconds": wav_meta["duration_seconds"],
+                    "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                    "played": False,
+                    "status": "unplayed",
+                    "position_seconds": 0.0,
+                    "timing": timing_data,
+                }
+            sidecar_data["command"] = cmd_display
             try:
-                output_wav_path.with_suffix(".json").write_text(
-                    json.dumps(sidecar_data, indent=2), encoding="utf-8"
-                )
+                sidecar_path.write_text(json.dumps(sidecar_data, indent=2), encoding="utf-8")
             except Exception:
                 pass
 
             output_info = {
+                "id": sidecar_data.get("id", output_wav_path.stem),
                 "filename": output_wav_path.name,
                 "url": f"/outputs/{output_wav_path.name}",
-                "duration_seconds": wav_meta["duration_seconds"],
-                "voice": sidecar_data["voice"],
-                "engine": sidecar_data["engine"],
-                "transcript": sidecar_data["transcript"],
-                "timing": timing_data,
+                "duration_seconds": sidecar_data.get("duration_seconds", wav_meta["duration_seconds"]),
+                "voice": sidecar_data.get("voice", voice or "puck"),
+                "engine": sidecar_data.get("engine", engine or "kokoro"),
+                "transcript": sidecar_data.get("transcript", transcript_text),
+                "played": bool(sidecar_data.get("played", False)),
+                "status": sidecar_data.get("status", "unplayed"),
+                "position_seconds": float(sidecar_data.get("position_seconds", 0.0)),
+                "timing": sidecar_data.get("timing") or timing_data,
             }
 
         yield format_sse(

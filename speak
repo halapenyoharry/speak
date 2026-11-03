@@ -39,6 +39,8 @@ SCRIPT_DIR="$(_resolve_script_dir)"
 ENGINES_DIR="${SCRIPT_DIR}/engines"
 VOICES_YAML="${SCRIPT_DIR}/voices.yaml"
 ENGINES_YAML="${SCRIPT_DIR}/engines.yaml"
+QUEUE_DIR="${SCRIPT_DIR}/outputs"
+QUEUE_FILE="${QUEUE_DIR}/queue.json"
 
 # ── Terminal formatting ──────────────────────────────────────────────
 BOLD='\033[1m'
@@ -1057,6 +1059,484 @@ cmd_daemon() {
   esac
 }
 
+# ── Synthesis & Playback Queue (`speak queue`) ───────────────────────
+# Canonical CLI queue persisted in outputs/queue.json (+ per-file .json sidecars).
+# Reconciles any .wav files in outputs/ so nothing is ever orphaned or lost.
+queue_register_output() {
+  local wav_path="$1" persona="$2" badge="$3" engine="$4" transcript="$5" set_active="${6:-false}"
+  mkdir -p "$QUEUE_DIR"
+  "$PYTHON" - "$QUEUE_DIR" "$QUEUE_FILE" "$wav_path" "$persona" "$badge" "$engine" "$transcript" "$set_active" <<'PYEOF'
+import sys, os, json, wave, datetime
+from pathlib import Path
+
+queue_dir = Path(sys.argv[1]).resolve()
+queue_file = Path(sys.argv[2]).resolve()
+wav_path = Path(sys.argv[3]).resolve()
+persona = sys.argv[4]
+badge = sys.argv[5]
+engine = sys.argv[6]
+transcript = sys.argv[7]
+set_active = sys.argv[8].lower() == "true"
+
+if not wav_path.exists():
+    sys.exit(0)
+
+# Probe duration via stdlib wave
+duration_sec = 0.0
+sample_rate = 24000
+try:
+    with wave.open(str(wav_path), "rb") as wf:
+        frames = wf.getnframes()
+        rate = wf.getframerate()
+        sample_rate = rate
+        if rate > 0:
+            duration_sec = round(frames / float(rate), 2)
+except Exception:
+    pass
+
+timing_path = Path(str(wav_path) + ".timing.json")
+timing_data = None
+if timing_path.exists():
+    try:
+        timing_data = json.loads(timing_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+cleaned_transcript = (timing_data.get("cleaned_text") if isinstance(timing_data, dict) else None) or transcript
+item_id = wav_path.stem
+now_iso = datetime.datetime.now().isoformat(timespec="seconds")
+
+sidecar_path = wav_path.with_suffix(".json")
+existing_sidecar = {}
+if sidecar_path.exists():
+    try:
+        existing_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+sidecar_data = {
+    "id": item_id,
+    "filename": wav_path.name,
+    "voice": persona,
+    "badge": badge,
+    "engine": engine,
+    "transcript": cleaned_transcript,
+    "duration_seconds": duration_sec,
+    "sample_rate": sample_rate,
+    "created_at": existing_sidecar.get("created_at") or now_iso,
+    "played": bool(existing_sidecar.get("played", False)),
+    "status": existing_sidecar.get("status", "unplayed"),
+    "position_seconds": float(existing_sidecar.get("position_seconds", 0.0)),
+    "timing": timing_data,
+}
+
+try:
+    sidecar_path.write_text(json.dumps(sidecar_data, indent=2), encoding="utf-8")
+except Exception:
+    pass
+
+# If the wav is inside QUEUE_DIR, also register/update it in queue.json
+if wav_path.parent == queue_dir:
+    qdata = {"active_id": None, "items": []}
+    if queue_file.exists():
+        try:
+            loaded = json.loads(queue_file.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                qdata["active_id"] = loaded.get("active_id")
+                qdata["items"] = loaded.get("items") if isinstance(loaded.get("items"), list) else []
+        except Exception:
+            pass
+
+    entry_summary = {k: v for k, v in sidecar_data.items() if k != "timing"}
+    entry_summary["url"] = f"/outputs/{wav_path.name}"
+
+    replaced = False
+    for idx, it in enumerate(qdata["items"]):
+        if it.get("id") == item_id or it.get("filename") == wav_path.name:
+            # Preserve existing playback state if re-indexing
+            entry_summary["played"] = bool(it.get("played", entry_summary["played"]))
+            entry_summary["status"] = it.get("status", entry_summary["status"])
+            entry_summary["position_seconds"] = float(it.get("position_seconds", entry_summary["position_seconds"]))
+            qdata["items"][idx] = entry_summary
+            replaced = True
+            break
+    if not replaced:
+        qdata["items"].insert(0, entry_summary)
+
+    if set_active or not qdata.get("active_id"):
+        qdata["active_id"] = item_id
+
+    try:
+        queue_file.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+PYEOF
+}
+
+cmd_queue() {
+  local sub="${1:-list}"
+  case "$sub" in
+    --json)
+      sub="list"
+      ;;
+    list|ls|status|add|state|update|play)
+      shift || true
+      ;;
+    *)
+      # If someone passes flags like `speak queue -v river "text"`, treat as `add`
+      if [[ "$sub" == -* ]]; then
+        sub="add"
+      fi
+      ;;
+  esac
+
+  if [[ "$sub" == "add" ]]; then
+    cmd_speak --queue "$@"
+    return $?
+  fi
+
+  mkdir -p "$QUEUE_DIR"
+
+  if [[ "$sub" == "play" ]]; then
+    local target_id="${1:-}"
+    local resolved_info
+    if ! resolved_info="$("$PYTHON" - "$QUEUE_DIR" "$QUEUE_FILE" "$target_id" <<'PYEOF'
+import sys, json
+from pathlib import Path
+
+qdir = Path(sys.argv[1]).resolve()
+qfile = Path(sys.argv[2]).resolve()
+target = sys.argv[3].strip()
+
+qdata = {"active_id": None, "items": []}
+if qfile.exists():
+    try:
+        qdata = json.loads(qfile.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+items = qdata.get("items") or []
+chosen = None
+if target:
+    for it in items:
+        if it.get("id") == target or it.get("filename") == target:
+            chosen = it
+            break
+if not chosen and qdata.get("active_id"):
+    for it in items:
+        if it.get("id") == qdata["active_id"]:
+            chosen = it
+            break
+if not chosen:
+    for it in items:
+        if not it.get("played"):
+            chosen = it
+            break
+if not chosen and items:
+    chosen = items[0]
+
+if not chosen:
+    sys.exit(1)
+
+wav_p = qdir / chosen["filename"]
+if not wav_p.exists():
+    sys.exit(1)
+
+print(chosen.get("id", wav_p.stem))
+print(str(wav_p))
+print(chosen.get("voice") or "puck")
+print(chosen.get("transcript") or "")
+PYEOF
+    )"; then
+      err "No matching item in queue to play."
+      exit 1
+    fi
+
+    local play_id play_wav play_voice play_text
+    { IFS= read -r play_id; IFS= read -r play_wav; IFS= read -r play_voice; play_text="$(cat)"; } <<< "$resolved_info"
+
+    cmd_queue state "$play_id" --status playing --active >/dev/null
+    if [[ -t 2 && -f "${SCRIPT_DIR}/visualizer.py" ]]; then
+      "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$play_wav" "$play_voice" "$play_text" --lines 3 --highlight word --emphasis "${CFG_EMPHASIS:-bold}" --view "${CFG_VIEW:-scroll}"
+    elif command -v afplay &>/dev/null; then
+      afplay "$play_wav"
+    fi
+    cmd_queue state "$play_id" --status played --played true --position 0 >/dev/null
+    return 0
+  fi
+
+  # For `list` and `state` / `update`, run Python reconciliation + mutation + display/JSON
+  "$PYTHON" - "$QUEUE_DIR" "$QUEUE_FILE" "$sub" "$@" <<'PYEOF'
+import sys, os, json, wave, datetime
+from pathlib import Path
+
+qdir = Path(sys.argv[1]).resolve()
+qfile = Path(sys.argv[2]).resolve()
+action = sys.argv[3]
+args = sys.argv[4:]
+
+def probe_wav(p: Path):
+    dur = 0.0
+    rate = 24000
+    try:
+        with wave.open(str(p), "rb") as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+            if rate > 0:
+                dur = round(frames / float(rate), 2)
+    except Exception:
+        pass
+    return dur, rate
+
+# 1. Load queue.json if present
+qdata = {"active_id": None, "items": []}
+if qfile.exists():
+    try:
+        loaded = json.loads(qfile.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            qdata["active_id"] = loaded.get("active_id")
+            if isinstance(loaded.get("items"), list):
+                qdata["items"] = loaded["items"]
+    except Exception:
+        pass
+
+# 2. Reconcile with outputs/*.wav so all existing WAV files are in the queue
+existing_by_name = {it.get("filename"): it for it in qdata["items"] if isinstance(it, dict) and it.get("filename")}
+wav_files = sorted(qdir.glob("*.wav"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+reconciled = []
+seen_names = set()
+
+# Keep existing ordering first for items whose .wav still exists
+for it in qdata["items"]:
+    fname = it.get("filename")
+    if not fname:
+        continue
+    wp = qdir / fname
+    if not wp.exists():
+        continue
+    seen_names.add(fname)
+    reconciled.append(it)
+
+# Prepend/add any newly discovered .wav files in outputs/
+for wp in wav_files:
+    if wp.name in seen_names:
+        continue
+    seen_names.add(wp.name)
+    dur, rate = probe_wav(wp)
+    sidecar_p = wp.with_suffix(".json")
+    sc = {}
+    if sidecar_p.exists():
+        try:
+            sc = json.loads(sidecar_p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    timing_p = Path(str(wp) + ".timing.json")
+    t_data = sc.get("timing")
+    if not t_data and timing_p.exists():
+        try:
+            t_data = json.loads(timing_p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    transcript = sc.get("transcript") or (t_data.get("cleaned_text") if isinstance(t_data, dict) else "") or ""
+    mtime_iso = datetime.datetime.fromtimestamp(wp.stat().st_mtime).isoformat(timespec="seconds")
+    item_id = wp.stem
+    played = bool(sc.get("played", False))
+    pos = float(sc.get("position_seconds", 0.0))
+    status = sc.get("status") or ("played" if played else "unplayed")
+    entry = {
+        "id": item_id,
+        "filename": wp.name,
+        "url": f"/outputs/{wp.name}",
+        "voice": sc.get("voice") or "puck",
+        "badge": sc.get("badge") or sc.get("voice") or "puck",
+        "engine": sc.get("engine") or "kokoro",
+        "transcript": transcript,
+        "duration_seconds": sc.get("duration_seconds") or dur,
+        "sample_rate": sc.get("sample_rate") or rate,
+        "created_at": sc.get("created_at") or mtime_iso,
+        "played": played,
+        "status": status,
+        "position_seconds": pos,
+    }
+    reconciled.append(entry)
+
+# Sort reconciled newest-first by created_at if queue was just initialized
+qdata["items"] = reconciled
+
+# Ensure active_id points to a valid item
+valid_ids = {it["id"] for it in qdata["items"]}
+if not qdata.get("active_id") or qdata["active_id"] not in valid_ids:
+    # Default active_id to the first unplayed item, or first item
+    unplayed_first = next((it["id"] for it in qdata["items"] if not it.get("played")), None)
+    qdata["active_id"] = unplayed_first or (qdata["items"][0]["id"] if qdata["items"] else None)
+
+json_mode = "--json" in args
+
+if action in ("state", "update"):
+    # Parse: <id> [--position SEC] [--played BOOL] [--status STATUS] [--active] [--json]
+    clean_args = [a for a in args if a != "--json"]
+    if not clean_args:
+        print("Error: speak queue state requires an item <id>", file=sys.stderr)
+        sys.exit(1)
+    target_id = clean_args[0]
+    new_pos = None
+    new_played = None
+    new_status = None
+    make_active = False
+
+    i = 1
+    while i < len(clean_args):
+        flag = clean_args[i]
+        if flag == "--position" and i + 1 < len(clean_args):
+            try:
+                new_pos = max(0.0, float(clean_args[i + 1]))
+            except ValueError:
+                pass
+            i += 2
+        elif flag == "--played" and i + 1 < len(clean_args):
+            new_played = clean_args[i + 1].lower() in ("true", "1", "yes")
+            i += 2
+        elif flag == "--status" and i + 1 < len(clean_args):
+            new_status = clean_args[i + 1].lower()
+            i += 2
+        elif flag == "--active":
+            make_active = True
+            i += 1
+        else:
+            i += 1
+
+    matched = None
+    for it in qdata["items"]:
+        if it.get("id") == target_id or it.get("filename") == target_id:
+            matched = it
+            break
+
+    if not matched:
+        print(f"Error: queue item '{target_id}' not found", file=sys.stderr)
+        sys.exit(1)
+
+    if new_pos is not None:
+        dur = float(matched.get("duration_seconds") or 0.0)
+        if dur > 0:
+            new_pos = min(dur, new_pos)
+        matched["position_seconds"] = round(new_pos, 2)
+
+    if new_played is not None:
+        matched["played"] = new_played
+        if new_played and not new_status:
+            matched["status"] = "played"
+        elif not new_played and not new_status:
+            matched["status"] = "unplayed"
+
+    if new_status is not None:
+        matched["status"] = new_status
+        if new_status == "played":
+            matched["played"] = True
+        elif new_status == "unplayed":
+            matched["played"] = False
+
+    if make_active or new_status == "playing":
+        qdata["active_id"] = matched["id"]
+
+    # Persist back to sidecar .json as well
+    wp = qdir / matched["filename"]
+    sidecar_p = wp.with_suffix(".json")
+    if sidecar_p.exists():
+        try:
+            sc = json.loads(sidecar_p.read_text(encoding="utf-8"))
+            sc["played"] = matched["played"]
+            sc["status"] = matched["status"]
+            sc["position_seconds"] = matched["position_seconds"]
+            sidecar_p.write_text(json.dumps(sc, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+# Save reconciled/updated queue.json
+try:
+    qfile.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+except Exception:
+    pass
+
+# Enrich items with `is_active` and `timing` for output
+enriched_items = []
+for it in qdata["items"]:
+    copy_it = dict(it)
+    copy_it["is_active"] = (it.get("id") == qdata.get("active_id"))
+    wp = qdir / it["filename"]
+    timing_p = Path(str(wp) + ".timing.json")
+    sidecar_p = wp.with_suffix(".json")
+    t_data = None
+    if timing_p.exists():
+        try:
+            t_data = json.loads(timing_p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    if not t_data and sidecar_p.exists():
+        try:
+            sc = json.loads(sidecar_p.read_text(encoding="utf-8"))
+            t_data = sc.get("timing")
+        except Exception:
+            pass
+    copy_it["timing"] = t_data
+    enriched_items.append(copy_it)
+
+total_cnt = len(enriched_items)
+played_cnt = sum(1 for it in enriched_items if it.get("played"))
+unplayed_cnt = total_cnt - played_cnt
+
+out_payload = {
+    "active_id": qdata.get("active_id"),
+    "counts": {
+        "total": total_cnt,
+        "unplayed": unplayed_cnt,
+        "played": played_cnt,
+    },
+    "items": enriched_items,
+}
+
+if json_mode:
+    print(json.dumps(out_payload, indent=2))
+else:
+    def fmt_mmss(sec):
+        sec = max(0, int(round(float(sec or 0))))
+        return f"{sec // 60:02d}:{sec % 60:02d}"
+
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RESET = "\033[0m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+
+    print(f"{BOLD}{CYAN}speak{RESET} {DIM}queue — {unplayed_cnt} unplayed · {played_cnt} played ({total_cnt} total){RESET}", file=sys.stderr)
+    print(f"{DIM}{'─' * 72}{RESET}", file=sys.stderr)
+    if not enriched_items:
+        print(f"  {DIM}Queue is empty. Run: speak -Q \"text to synthesize\"{RESET}", file=sys.stderr)
+    for it in enriched_items:
+        is_act = it.get("is_active")
+        played = it.get("played")
+        pos = float(it.get("position_seconds") or 0.0)
+        dur = float(it.get("duration_seconds") or 0.0)
+        if is_act:
+            marker = f"{BOLD}{GREEN}▶ ACTIVE  {RESET}"
+        elif played:
+            marker = f"{DIM}✓ PLAYED  {RESET}"
+        elif pos > 0:
+            marker = f"{YELLOW}◐ RESUME  {RESET}"
+        else:
+            marker = f"{CYAN}○ UNPLAYED{RESET}"
+
+        voice = (it.get("voice") or "voice").upper().ljust(8)
+        time_str = f"{fmt_mmss(pos)}/{fmt_mmss(dur)}"
+        snippet = (it.get("transcript") or "").replace("\n", " ").strip()
+        if len(snippet) > 42:
+            snippet = snippet[:39] + "..."
+        line_str = f"  {marker} {BOLD}{voice}{RESET} [{time_str}]  {DIM}{it['id']}{RESET}  \"{snippet}\""
+        print(line_str, file=sys.stderr)
+PYEOF
+}
+
 cmd_help() {
   cat <<EOF
 
@@ -1064,6 +1544,7 @@ $(echo -e "${BOLD}${CYAN}speak${RESET} ${DIM}v${VERSION}${RESET}")  persona-driv
 
 $(echo -e "${BOLD}USAGE${RESET}")
     speak [options] [text]         Narrate text (optimizes when supported, then speaks)
+    speak queue [list|add|state]   Manage synthesis queue, playback state, and remembered position
     speak voices [--all]           List personas for the active engine (--all = coverage grid)
     speak daemon [start|stop|stat] Keep local models warm in memory for faster responses
     speak set [key] [value]        View or change configuration
@@ -1074,6 +1555,7 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -v, --voice PERSONA           Persona name (case-insensitive)
     -r, --raw                     Skip narration optimization, send text directly
     -c, --clipboard               Read text from clipboard
+    -Q, --queue                   Synthesize into the persistent queue without immediate terminal playback
     -o, --output FILE             Save .wav file instead of playing
     -q, --quiet                   Suppress narration transcript display
     -l, --lines N                 Closed captioning lines in HUD (1-8, default: 3)
@@ -1323,6 +1805,7 @@ cmd_speak() {
   local model_flag=""
   local raw=false
   local clipboard=false
+  local queue_mode=false
   local output=""
   local play=true
   local quiet=false
@@ -1340,7 +1823,7 @@ cmd_speak() {
   # mutual-exclusion guard deleted by construction (single engine value).
   while [[ $# -gt 0 ]]; do
     # Expand combined short boolean flags (e.g., -rc -> -r -c)
-    if [[ "$1" =~ ^-[rcq]{2,}$ ]]; then
+    if [[ "$1" =~ ^-[rcqQ]{2,}$ ]]; then
       local expanded=()
       for (( i=1; i<${#1}; i++ )); do
         expanded+=("-${1:$i:1}")
@@ -1356,6 +1839,7 @@ cmd_speak() {
       -v|--voice) persona_flag="$2"; shift 2 ;;
       -r|--raw) raw=true; shift ;;
       -c|--clipboard) clipboard=true; shift ;;
+      -Q|--queue) queue_mode=true; play=false; shift ;;
       -o|--output) output="$2"; play=false; shift 2 ;;
       -q|--quiet) quiet=true; shift ;;
       -l|--lines) lines_flag="$2"; shift 2 ;;
@@ -1813,8 +2297,22 @@ print(json.dumps(meta, indent=2))
       fi
     fi
   else
+    if [[ -z "$output" && "$queue_mode" == true ]]; then
+      mkdir -p "$QUEUE_DIR"
+      local ts_slug
+      ts_slug="$(date +%Y%m%d_%H%M%S)"
+      output="${QUEUE_DIR}/speak_${ts_slug}_${persona}.wav"
+    fi
     cp "$wav_file" "$output"
-    echo -e "  ${GREEN}✓${RESET} ${DIM}saved → ${output}${RESET}" >&2
+    if [[ -f "${wav_file}.timing.json" ]]; then
+      cp "${wav_file}.timing.json" "${output}.timing.json"
+    fi
+    queue_register_output "$output" "$persona" "$badge_name" "$engine" "$transcript" "$queue_mode"
+    if [[ "$queue_mode" == true ]]; then
+      echo -e "  ${GREEN}✓${RESET} ${DIM}queued → $(basename "$output")${RESET}" >&2
+    else
+      echo -e "  ${GREEN}✓${RESET} ${DIM}saved → ${output}${RESET}" >&2
+    fi
   fi
 
   # After recording / playback: if local model ran standalone, prompt to load daemon if enabled
@@ -1919,6 +2417,8 @@ migrate_config
 # engine itself defaults to gemini when config is silent (the historical
 # default_use_gcloud=false → gemini).
 ENGINE="${CFG_ENGINE:-gemini}"
+QUEUE_DIR="${SCRIPT_DIR}/outputs"
+QUEUE_FILE="${QUEUE_DIR}/queue.json"
 if ! engine_exists "$ENGINE"; then
   err "Config engine '${ENGINE}' is invalid. Run: speak set engine gemini|gcloud|kokoro|bark"
   exit 1
@@ -1928,6 +2428,7 @@ case "${1:-}" in
   voices)    shift; cmd_voices "${1:-}" ;;
   set)       shift; cmd_set "$@" ;;
   daemon)    shift; cmd_daemon "$@" ;;
+  queue)     shift; cmd_queue "$@" ;;
   --help)    cmd_help ;;
   --version) echo "speak v${VERSION}" ;;
   *)         cmd_speak "$@" ;;
