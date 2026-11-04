@@ -86,12 +86,40 @@ _resolve_python() {
     candidates+=("$(command -v python3)")
   fi
   # Common alternative install locations.
-  candidates+=(/opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3)
+  candidates+=(
+    /Library/Frameworks/Python.framework/Versions/3.12/bin/python3
+    /opt/homebrew/bin/python3
+    /usr/local/bin/python3
+    /usr/bin/python3
+  )
   local c
   for c in "${candidates[@]}"; do
     [[ -x "$c" ]] || continue
     if "$c" -c 'import yaml' >/dev/null 2>&1; then
       PYTHON="$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_resolve_web_python() {
+  local candidates=("$PYTHON")
+  [[ -n "${SPEAK_PYTHON:-}" ]] && candidates+=("$SPEAK_PYTHON")
+  if command -v python3 >/dev/null 2>&1; then
+    candidates+=("$(command -v python3)")
+  fi
+  candidates+=(
+    /Library/Frameworks/Python.framework/Versions/3.12/bin/python3
+    /usr/local/bin/python3
+    /opt/homebrew/bin/python3
+    /usr/bin/python3
+  )
+  local c
+  for c in "${candidates[@]}"; do
+    [[ -x "$c" ]] || continue
+    if "$c" -c 'import yaml, fastapi, uvicorn' >/dev/null 2>&1; then
+      printf '%s' "$c"
       return 0
     fi
   done
@@ -986,6 +1014,330 @@ daemon_stop_one() {
   echo -e "${GREEN}✓ stopped${RESET}" >&2
 }
 
+# ── Persistent Web UI Sidecar Server (`speak web`) ───────────────────
+WEB_DEFAULT_HOST="127.0.0.1"
+WEB_DEFAULT_PORT="2420"
+WEB_LAUNCHD_LABEL="com.speak.webui"
+WEB_LAUNCHD_PLIST="${HOME}/Library/LaunchAgents/${WEB_LAUNCHD_LABEL}.plist"
+
+web_pid() {
+  local port="${1:-$WEB_DEFAULT_PORT}"
+  local pid_file="${CONFIG_DIR}/web.pid"
+  if [[ -f "$pid_file" ]]; then
+    local p; p=$(cat "$pid_file" 2>/dev/null | xargs)
+    if [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; then
+      echo "$p"
+      return 0
+    fi
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    local lp; lp=$(lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -n 1 || true)
+    if [[ -n "$lp" ]] && kill -0 "$lp" 2>/dev/null; then
+      echo "$lp"
+      return 0
+    fi
+  fi
+  local pp; pp=$(pgrep -f "${SCRIPT_DIR}/web_ui.py" 2>/dev/null | head -n 1 || true)
+  if [[ -n "$pp" ]] && kill -0 "$pp" 2>/dev/null; then
+    echo "$pp"
+    return 0
+  fi
+  return 1
+}
+
+web_keepalive_mode() {
+  local sup_pid_file="${CONFIG_DIR}/web_supervisor.pid"
+  if [[ -f "$sup_pid_file" ]]; then
+    local sp; sp=$(cat "$sup_pid_file" 2>/dev/null | xargs)
+    if [[ -n "$sp" ]] && kill -0 "$sp" 2>/dev/null; then
+      if [[ -f "$WEB_LAUNCHD_PLIST" ]]; then
+        echo "supervisor + launchd"
+      else
+        echo "supervisor"
+      fi
+      return 0
+    fi
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]] && [[ -f "$WEB_LAUNCHD_PLIST" ]]; then
+    if launchctl list "$WEB_LAUNCHD_LABEL" >/dev/null 2>&1; then
+      echo "launchd"
+      return 0
+    fi
+  fi
+  echo "standalone"
+}
+
+web_status_one() {
+  local host="${1:-$WEB_DEFAULT_HOST}" port="${2:-$WEB_DEFAULT_PORT}"
+  local pid; pid=$(web_pid "$port" || true)
+  local url="http://${host}:${port}"
+  if [[ -n "$pid" ]]; then
+    local mem mode
+    mem=$(ps -o rss= -p "$pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}' || echo "")
+    mode=$(web_keepalive_mode)
+    echo -e "  ${BOLD}Web UI Server${RESET}  ${GREEN}● running${RESET}  ${CYAN}${url}${RESET}  ${DIM}(pid: ${pid}${mem:+, mem: ${mem}}, keepalive: ${mode})${RESET}" >&2
+  else
+    echo -e "  ${BOLD}Web UI Server${RESET}  ${DIM}○ stopped${RESET}  ${DIM}(${url})${RESET}" >&2
+  fi
+}
+
+web_write_launchagent() {
+  local web_py="$1" host="$2" port="$3" log_file="$4"
+  mkdir -p "${HOME}/Library/LaunchAgents"
+  cat > "$WEB_LAUNCHD_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${WEB_LAUNCHD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${web_py}</string>
+    <string>${SCRIPT_DIR}/web_ui.py</string>
+    <string>--host</string>
+    <string>${host}</string>
+    <string>--port</string>
+    <string>${port}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${SCRIPT_DIR}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>2</integer>
+  <key>StandardOutPath</key>
+  <string>${log_file}</string>
+  <key>StandardErrorPath</key>
+  <string>${log_file}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${HOME}/.local/bin</string>
+    <key>HOME</key>
+    <string>${HOME}</string>
+  </dict>
+</dict>
+</plist>
+PLIST
+}
+
+web_start_one() {
+  local host="${1:-$WEB_DEFAULT_HOST}" port="${2:-$WEB_DEFAULT_PORT}"
+  mkdir -p "$CONFIG_DIR"
+  local web_py
+  if ! web_py="$(_resolve_web_python)"; then
+    err "Web UI requires python3 with fastapi, uvicorn, and pyyaml."
+    echo -e "${DIM}Install with: pip3 install fastapi uvicorn pyyaml${RESET}" >&2
+    return 1
+  fi
+
+  local existing_pid; existing_pid=$(web_pid "$port" || true)
+  local current_mode; current_mode=$(web_keepalive_mode)
+  if [[ -n "$existing_pid" && "$current_mode" != "standalone" ]]; then
+    echo -e "  Web UI Server is already running at ${CYAN}http://${host}:${port}${RESET} ${DIM}(pid: ${existing_pid}, keepalive: ${current_mode})${RESET}" >&2
+    return 0
+  fi
+
+  # If running standalone without keepalive, stop it first so the keepalive supervisor owns it cleanly.
+  if [[ -n "$existing_pid" ]]; then
+    kill -15 "$existing_pid" 2>/dev/null || true
+    sleep 0.5
+  fi
+
+  local log_file="${CONFIG_DIR}/web_ui.log"
+  echo -ne "  Starting ${BOLD}Web UI Server${RESET} (keepalive) on ${CYAN}http://${host}:${port}${RESET}... " >&2
+
+  # 1. On macOS, write LaunchAgent so macOS starts it on login and keeps it alive across reboots.
+  local launched_via_launchd=false
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    web_write_launchagent "$web_py" "$host" "$port" "$log_file"
+    launchctl bootout "gui/$(id -u)/${WEB_LAUNCHD_LABEL}" 2>/dev/null || launchctl unload "$WEB_LAUNCHD_PLIST" 2>/dev/null || true
+    if launchctl bootstrap "gui/$(id -u)" "$WEB_LAUNCHD_PLIST" 2>/dev/null || launchctl load -w "$WEB_LAUNCHD_PLIST" 2>/dev/null; then
+      # Wait up to 3s to see if launchd spawned the server
+      local lw=0
+      while [[ $lw -lt 6 ]]; do
+        if [[ -n "$(web_pid "$port" || true)" ]]; then
+          launched_via_launchd=true
+          break
+        fi
+        sleep 0.5
+        lw=$((lw + 1))
+      done
+    fi
+  fi
+
+  # 2. If launchd did not spawn it immediately (e.g. non-GUI shell or Linux), start the auto-restart supervisor loop.
+  if [[ "$launched_via_launchd" == false ]]; then
+    local sup_script="${CONFIG_DIR}/web_keepalive.sh"
+    cat > "$sup_script" <<SUPEOF
+#!/usr/bin/env bash
+echo \$\$ > "${CONFIG_DIR}/web_supervisor.pid"
+child_pid=""
+cleanup() {
+  [[ -n "\$child_pid" ]] && kill -15 "\$child_pid" 2>/dev/null || true
+  rm -f "${CONFIG_DIR}/web_supervisor.pid" "${CONFIG_DIR}/web.pid"
+  exit 0
+}
+trap cleanup SIGTERM SIGINT SIGHUP
+while true; do
+  "${web_py}" "${SCRIPT_DIR}/web_ui.py" --host "${host}" --port "${port}" >> "${log_file}" 2>&1 &
+  child_pid=\$!
+  wait "\$child_pid"
+  rc=\$?
+  # If killed by signal via cleanup, exit loop; otherwise restart after 2s
+  if [[ ! -f "${CONFIG_DIR}/web_supervisor.pid" ]]; then
+    break
+  fi
+  sleep 2
+done
+SUPEOF
+    chmod +x "$sup_script"
+    nohup "$sup_script" >/dev/null 2>&1 &
+    disown $! 2>/dev/null || true
+  fi
+
+  # Wait up to 10s for HTTP health response
+  local waited=0
+  local new_pid=""
+  while [[ $waited -lt 20 ]]; do
+    new_pid=$(web_pid "$port" || true)
+    if [[ -n "$new_pid" ]] && curl -s --max-time 1 "http://${host}:${port}/api/health" >/dev/null 2>&1; then
+      local mode; mode=$(web_keepalive_mode)
+      echo -e "${GREEN}✓ done${RESET} ${DIM}(pid: ${new_pid}, keepalive: ${mode})${RESET}" >&2
+      return 0
+    fi
+    sleep 0.5
+    waited=$((waited + 1))
+  done
+
+  new_pid=$(web_pid "$port" || true)
+  if [[ -n "$new_pid" ]]; then
+    echo -e "${GREEN}✓ started${RESET} ${DIM}(pid: ${new_pid})${RESET}" >&2
+    return 0
+  else
+    echo -e "${RED}✗ failed${RESET}" >&2
+    [[ -f "$log_file" ]] && tail -n 20 "$log_file" >&2
+    return 1
+  fi
+}
+
+web_stop_one() {
+  local port="${1:-$WEB_DEFAULT_PORT}"
+  local sup_pid_file="${CONFIG_DIR}/web_supervisor.pid"
+  local pid_file="${CONFIG_DIR}/web.pid"
+
+  # 1. Unload and remove macOS LaunchAgent so launchd does not respawn it while stopped
+  if [[ "$(uname -s)" == "Darwin" ]] && [[ -f "$WEB_LAUNCHD_PLIST" ]]; then
+    launchctl bootout "gui/$(id -u)/${WEB_LAUNCHD_LABEL}" 2>/dev/null || launchctl unload -w "$WEB_LAUNCHD_PLIST" 2>/dev/null || true
+    rm -f "$WEB_LAUNCHD_PLIST" 2>/dev/null || true
+  fi
+
+  # 2. Stop supervisor loop if running
+  if [[ -f "$sup_pid_file" ]]; then
+    local sp; sp=$(cat "$sup_pid_file" 2>/dev/null | xargs)
+    rm -f "$sup_pid_file" 2>/dev/null || true
+    if [[ -n "$sp" ]] && kill -0 "$sp" 2>/dev/null; then
+      kill -15 "$sp" 2>/dev/null || true
+    fi
+  fi
+
+  # 3. Stop web_ui.py process if running
+  local pid; pid=$(web_pid "$port" || true)
+  if [[ -z "$pid" ]]; then
+    rm -f "$pid_file" 2>/dev/null || true
+    echo -e "  Web UI Server is not running." >&2
+    return 0
+  fi
+
+  echo -ne "  Stopping Web UI Server (pid ${pid})... " >&2
+  kill -15 "$pid" 2>/dev/null || true
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 6 ]]; do
+    sleep 0.5
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$pid_file" 2>/dev/null || true
+  echo -e "${GREEN}✓ stopped${RESET}" >&2
+}
+
+cmd_web() {
+  local action="${1:-status}"
+  shift || true
+  local host="$WEB_DEFAULT_HOST"
+  local port="$WEB_DEFAULT_PORT"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --host) host="${2:-$WEB_DEFAULT_HOST}"; shift 2 ;;
+      --port|-p) port="${2:-$WEB_DEFAULT_PORT}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  case "$action" in
+    status)
+      header
+      echo "" >&2
+      echo -e "${BOLD}Web UI Sidecar Server${RESET}  ${DIM}(persistent local web interface)${RESET}" >&2
+      echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
+      web_status_one "$host" "$port"
+      echo "" >&2
+      echo -e "${DIM}Commands: speak web [start|stop|restart|status|open|logs] [--port 2420]${RESET}" >&2
+      ;;
+    start)
+      header
+      echo "" >&2
+      web_start_one "$host" "$port"
+      echo "" >&2
+      ;;
+    stop)
+      header
+      echo "" >&2
+      web_stop_one "$port"
+      echo "" >&2
+      ;;
+    restart)
+      header
+      echo "" >&2
+      web_stop_one "$port"
+      web_start_one "$host" "$port"
+      echo "" >&2
+      ;;
+    open)
+      header
+      echo "" >&2
+      web_start_one "$host" "$port"
+      local url="http://${host}:${port}"
+      if command -v open >/dev/null 2>&1; then
+        open "$url"
+      elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$url"
+      fi
+      echo -e "  ${GREEN}✓${RESET} Opened ${CYAN}${url}${RESET}" >&2
+      echo "" >&2
+      ;;
+    logs|log)
+      local log_file="${CONFIG_DIR}/web_ui.log"
+      if [[ -f "$log_file" ]]; then
+        tail -n 40 "$log_file"
+      else
+        echo -e "${DIM}No Web UI log file found at ${log_file}${RESET}" >&2
+      fi
+      ;;
+    *)
+      err "Unknown web action: $action. Choose: start, stop, restart, status, open, or logs."
+      echo -e "${DIM}Usage: speak web [start|stop|restart|status|open|logs] [--port 2420] [--host 127.0.0.1]${RESET}" >&2
+      exit 1
+      ;;
+  esac
+}
+
 cmd_daemon() {
   local action="${1:-status}"
   local target="${2:-all}"
@@ -994,17 +1346,18 @@ cmd_daemon() {
     status)
       header
       echo "" >&2
-      echo -e "${BOLD}Local Model Daemons${RESET}  ${DIM}(keeping weights resident in memory for faster responses)${RESET}" >&2
+      echo -e "${BOLD}Local Daemons & Web Server${RESET}  ${DIM}(resident models & persistent Web UI)${RESET}" >&2
       echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
       daemon_status_one "kokoro" "Kokoro TTS"
       daemon_status_one "bark" "Suno Bark"
+      web_status_one "$WEB_DEFAULT_HOST" "$WEB_DEFAULT_PORT"
       echo "" >&2
-      echo -e "${DIM}Commands: speak daemon start [all|kokoro|bark] | speak daemon stop${RESET}" >&2
+      echo -e "${DIM}Commands: speak daemon start [all|kokoro|bark|web] | speak daemon stop | speak web status${RESET}" >&2
       ;;
     start)
       header
       echo "" >&2
-      echo -e "${BOLD}Starting Local Model Daemons...${RESET}" >&2
+      echo -e "${BOLD}Starting Local Daemons...${RESET}" >&2
       echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
       case "$target" in
         bark)
@@ -1013,12 +1366,16 @@ cmd_daemon() {
         kokoro)
           daemon_start_one "kokoro" "Kokoro TTS" "${ENGINES_DIR}/kokoro_daemon.py"
           ;;
+        web)
+          web_start_one "$WEB_DEFAULT_HOST" "$WEB_DEFAULT_PORT"
+          ;;
         all|"")
           daemon_start_one "kokoro" "Kokoro TTS" "${ENGINES_DIR}/kokoro_daemon.py"
           daemon_start_one "bark" "Suno Bark" "${ENGINES_DIR}/bark_daemon.py"
+          web_start_one "$WEB_DEFAULT_HOST" "$WEB_DEFAULT_PORT"
           ;;
         *)
-          err "Unknown daemon target: $target. Choose: all, kokoro, or bark."
+          err "Unknown daemon target: $target. Choose: all, kokoro, bark, or web."
           exit 1
           ;;
       esac
@@ -1027,7 +1384,7 @@ cmd_daemon() {
     stop)
       header
       echo "" >&2
-      echo -e "${BOLD}Stopping Local Model Daemons...${RESET}" >&2
+      echo -e "${BOLD}Stopping Local Daemons...${RESET}" >&2
       echo -e "${DIM}───────────────────────────────────────────────────────${RESET}" >&2
       case "$target" in
         bark)
@@ -1036,12 +1393,16 @@ cmd_daemon() {
         kokoro)
           daemon_stop_one "kokoro" "Kokoro TTS"
           ;;
+        web)
+          web_stop_one "$WEB_DEFAULT_PORT"
+          ;;
         all|"")
           daemon_stop_one "kokoro" "Kokoro TTS"
           daemon_stop_one "bark" "Suno Bark"
+          web_stop_one "$WEB_DEFAULT_PORT"
           ;;
         *)
-          err "Unknown daemon target: $target. Choose: all, kokoro, or bark."
+          err "Unknown daemon target: $target. Choose: all, kokoro, bark, or web."
           exit 1
           ;;
       esac
@@ -1053,7 +1414,7 @@ cmd_daemon() {
       ;;
     *)
       err "Unknown daemon action: $action. Choose: status, start, stop, or restart."
-      echo -e "${DIM}Usage: speak daemon [start|stop|restart|status] [all|kokoro|bark]${RESET}" >&2
+      echo -e "${DIM}Usage: speak daemon [start|stop|restart|status] [all|kokoro|bark|web]${RESET}" >&2
       exit 1
       ;;
   esac
@@ -1544,9 +1905,10 @@ $(echo -e "${BOLD}${CYAN}speak${RESET} ${DIM}v${VERSION}${RESET}")  persona-driv
 
 $(echo -e "${BOLD}USAGE${RESET}")
     speak [options] [text]         Narrate text (optimizes when supported, then speaks)
+    speak web [start|stop|status]  Manage the persistent Web UI sidecar server (port 2420)
     speak queue [list|add|state]   Manage synthesis queue, playback state, and remembered position
     speak voices [--all]           List personas for the active engine (--all = coverage grid)
-    speak daemon [start|stop|stat] Keep local models warm in memory for faster responses
+    speak daemon [start|stop|stat] Keep local models & web server warm in memory
     speak set [key] [value]        View or change configuration
 
 $(echo -e "${BOLD}OPTIONS${RESET}")
@@ -1581,8 +1943,10 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak --optimizer-provider openrouter --optimizer-model openrouter/free "Test"
     speak -o narrated.wav < chapter.txt
     cat essay.md | speak -v Charon -o essay.wav
-    speak daemon start all          Pre-load local models (Kokoro & Bark) into memory
-    speak daemon status             Check local model memory residency
+    speak web start                 Start and keep the Web UI server running (port 2420)
+    speak web open                  Open the Web UI in your browser
+    speak daemon start all          Pre-load local models (Kokoro & Bark) + Web UI
+    speak daemon status             Check local model memory residency and Web UI status
     speak set engine kokoro         Default to offline Kokoro TTS
     speak set persona Puck          Change default persona
     speak set daemon_prompt false   Disable prompt to load daemon after standalone runs
@@ -1593,10 +1957,11 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak --stdout "hello" | mpv -  Pipe audio to another process
     speak --json "hello" | jq .duration_seconds
 
-$(echo -e "${BOLD}DAEMON (FAST RESPONSES)${RESET}")  $(echo -e "${DIM}(keeps models resident in Apple Silicon memory)${RESET}")
-    speak daemon start [all|kokoro|bark]   Pre-load model weights into memory
-    speak daemon stop  [all|kokoro|bark]   Unload models and free memory
-    speak daemon status                    Check daemon status and memory footprint
+$(echo -e "${BOLD}WEB SERVER & DAEMONS${RESET}")  $(echo -e "${DIM}(persistent Web UI & resident Apple Silicon models)${RESET}")
+    speak web [start|stop|restart|status|open|logs] [--port 2420]
+    speak daemon start [all|kokoro|bark|web]   Pre-load models & Web UI in background
+    speak daemon stop  [all|kokoro|bark|web]   Unload models & stop Web UI
+    speak daemon status                        Check daemon & Web UI status
 
 $(echo -e "${BOLD}AUDIO TAGS${RESET}")  $(echo -e "${DIM}(applied by the optimizer for tag-capable engines, or manually with -r)${RESET}")
     [whispers]  [excited]  [serious]  [warmly]  [slowly]
@@ -2428,6 +2793,7 @@ case "${1:-}" in
   voices)    shift; cmd_voices "${1:-}" ;;
   set)       shift; cmd_set "$@" ;;
   daemon)    shift; cmd_daemon "$@" ;;
+  web)       shift; cmd_web "$@" ;;
   queue)     shift; cmd_queue "$@" ;;
   --help)    cmd_help ;;
   --version) echo "speak v${VERSION}" ;;

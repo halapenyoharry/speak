@@ -272,19 +272,28 @@ During playback, `speak` renders a borderless, adaptive teleprompter that auto-s
   * **Monochromatic Cyan Gradient:** Single hue only; the spoken line is electric cyan, stepping down in pure cyan luminance (84%, 67%, 51%, 37%) so visual attention is never distracted by conflicting colors.
 * **Terminal Tab Title:** Updates the IDE terminal tab title via OSC (`VOICE: <VOICE>`) and clears on completion.
 
-## Non-Invasive Web Front-End Sidecar (`web_ui.py`)
+## Non-Invasive Web Front-End Sidecar (`speak web` / `web_ui.py`)
 
-`speak` includes a self-contained, zero-build 2-file Web UI sidecar (`web_ui.py` + `static/index.html`) that wraps the CLI without modifying a single line of CLI logic:
+`speak` includes a self-contained, zero-build 2-file Web UI sidecar (`web_ui.py` + `static/index.html`) that wraps the CLI and can be kept running persistently in the background:
 
 ```bash
-python3 web_ui.py
-# Open http://127.0.0.1:2420
+speak web start                 # Start and keep the Web UI running on http://127.0.0.1:2420
+speak web open                  # Start (if needed) and open http://127.0.0.1:2420 in your browser
+speak web status                # Check PID, memory usage, and keepalive supervisor status
+speak web restart               # Restart the Web UI server
+speak web logs                  # Tail the Web UI server logs (~/.config/speak/web_ui.log)
+speak web stop                  # Stop the Web UI server and unload keepalive
+
+# Or start both local model daemons (Kokoro & Bark) and the Web UI together:
+speak daemon start all
+speak daemon status
 ```
 
+- **Keepalive Persistence:** On macOS, `speak web start` automatically installs and loads a `launchd` LaunchAgent (`~/Library/LaunchAgents/com.speak.webui.plist` with `RunAtLoad=true` and `KeepAlive=true`) paired with an auto-restarting supervisor so the Web UI stays up across crashes and logins.
 - **Introspection (`GET /api/schema`):** Parses `./speak --help`, `voices.yaml`, `engines.yaml`, and `~/.config/speak/config` in read-only mode to dynamically populate subcommands, flags, engines, and 30+ voices.
+- **Persistent Queue (`GET /api/queue`, `POST /api/queue/state`):** Syncs directly with `speak queue` (`outputs/queue.json`) to track unplayed/played items and remembered playback positions.
 - **Live SSE Execution (`POST /api/run`):** Spawns `./speak` via `asyncio.create_subprocess_exec` (never `shell=True`) and streams real-time stdout/stderr telemetry and ANSI status updates to the browser over Server-Sent Events (`text/event-stream`).
-- **Artifact & Output Browser (`GET /api/outputs`):** Lists and streams generated `.wav` artifacts from `outputs/` and the workspace with embedded HTML5 audio players.
-- **Theme Switcher:** Toggle instantly between **◇ Lothal Astromech** (warm obsidian & cyan HUD) and **🕹️ 1984 Vector Arcade** (CRT phosphor scanlines, neon magenta/cyan vector borders, and arcade high-score styling).
+- **Responsive 1/2/3-Column Layout & Theme Switcher:** Adapts from a single-column iPhone stack (with Console at the end) up to a 3-column widescreen studio layout (Voice & Source, Player with top controls & live captions, and Queue), with instant switching between **◇ Lothal** and **🕹️ 1984 Arcade** themes.
 
 ## Platform support
 

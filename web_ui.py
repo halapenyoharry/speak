@@ -610,7 +610,12 @@ async def run_cli(request: Request) -> StreamingResponse:
     )
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/api/health")
+async def get_health() -> JSONResponse:
+    return JSONResponse({"status": "ok", "pid": os.getpid(), "version": "0.2.0"})
+
+
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def serve_index() -> FileResponse:
     index_file = STATIC_DIR / "index.html"
     if not index_file.exists():
@@ -624,11 +629,28 @@ if STATIC_DIR.exists():
 
 if __name__ == "__main__":
     import argparse
+    import atexit
 
     parser = argparse.ArgumentParser(description="Run the non-invasive speak Web UI Sidecar")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=2420, help="Bind port (default: 2420)")
     args = parser.parse_args()
 
-    print(f"  speak Web UI Sidecar listening on http://{args.host}:{args.port}", file=sys.stderr)
+    pid_file = Path.home() / ".config" / "speak" / "web.pid"
+    try:
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    except Exception:
+        pass
+
+    def _cleanup_pid() -> None:
+        try:
+            if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                pid_file.unlink()
+        except Exception:
+            pass
+
+    atexit.register(_cleanup_pid)
+
+    print(f"  speak Web UI Sidecar listening on http://{args.host}:{args.port} (pid: {os.getpid()})", file=sys.stderr)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
