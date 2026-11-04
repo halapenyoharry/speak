@@ -51,7 +51,7 @@ ANSI_COLOR_MAP = {
 app = FastAPI(
     title="speak Web UI Sidecar",
     description="Non-invasive web front-end sidecar for the speak CLI",
-    version="0.2.0",
+    version="1.2.0",
 )
 
 
@@ -612,7 +612,7 @@ async def run_cli(request: Request) -> StreamingResponse:
 
 @app.get("/api/health")
 async def get_health() -> JSONResponse:
-    return JSONResponse({"status": "ok", "pid": os.getpid(), "version": "0.2.0"})
+    return JSONResponse({"status": "ok", "pid": os.getpid(), "version": "1.2.0"})
 
 
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)

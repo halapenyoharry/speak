@@ -356,7 +356,18 @@ def get_scrolling_caption_lines(words, line_groups, word_timings, elapsed, durat
 
     return rendered_lines
 
-def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, highlight_mode="word", emphasis="bold", view_mode="scroll", mock_audio=False):
+def play_with_hud(
+    wav_path,
+    voice_name="speak",
+    transcript="",
+    num_lines=3,
+    highlight_mode="word",
+    emphasis="bold",
+    view_mode="scroll",
+    mock_audio=False,
+    model_info="",
+    tokens_info="",
+):
     if not os.path.exists(wav_path):
         print(f"File not found: {wav_path}", file=sys.stderr)
         return 1
@@ -528,6 +539,20 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
                 time_str = f"{cur_m:02d}:{cur_s:02d}"
 
             telem_content = f"  {voice_badge}  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
+            if model_info or tokens_info:
+                meta_parts_plain = []
+                meta_parts_ansi = []
+                if model_info:
+                    meta_parts_plain.append(f"model {model_info}")
+                    meta_parts_ansi.append(f"{DIM}model{RESET} {model_info}")
+                if tokens_info:
+                    meta_parts_plain.append(f"tokens {tokens_info}")
+                    meta_parts_ansi.append(f"{DIM}tokens{RESET} {tokens_info}")
+                # Estimate visible length of telem_content + meta to prevent line wrapping during 20fps cursor-up loop
+                base_vis_len = 2 + len(clean_voice) + 2 + 6 + 3 + meter_len + 3 + track_len + 6 + len(time_str)
+                meta_vis_len = 2 + len("  ".join(meta_parts_plain))
+                if base_vis_len + meta_vis_len < term_cols - 1:
+                    telem_content += "  " + "  ".join(meta_parts_ansi)
 
             if is_scroll_view:
                 if line_groups:
@@ -587,16 +612,24 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
         if player and player.poll() is None:
             player.wait()
 
-        # FINAL COMPLETION FRAME
+        # FINAL COMPLETION FRAME (Voice Activity Results Timeline at the bottom of the terminal)
         tot_m, tot_s = divmod(int(duration), 60)
         time_str = f"{tot_m:02d}:{tot_s:02d}"
+        done_track_len = 14 if term_cols >= 70 else (10 if term_cols >= 55 else 8)
+        done_track = f"{BRIGHT_CYAN}{'━' * done_track_len}{RESET}"
+        done_meta = ""
+        if model_info:
+            done_meta += f"  {DIM}model{RESET} {model_info}"
+        if tokens_info:
+            done_meta += f"  {DIM}tokens{RESET} {tokens_info}"
+        done_timeline = f"  {voice_badge}  {GREEN}● DONE{RESET}  [{done_track}] 100% {time_str}{done_meta}"
 
         if is_scroll_view:
             while printed_up_to < len(line_groups):
                 done_line = " ".join(line_groups[printed_up_to])
                 sys.stderr.write(f"\r\033[K  \033[38;2;0;190;205m{done_line}{RESET}\n")
                 printed_up_to += 1
-            sys.stderr.write(f"\r\033[K\n\r\033[K  {voice_badge}  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})\n")
+            sys.stderr.write(f"\r\033[K\n\r\033[K{done_timeline}\n")
             sys.stderr.flush()
         else:
             fin_lines = [""]
@@ -606,7 +639,7 @@ def play_with_hud(wav_path, voice_name="speak", transcript="", num_lines=3, high
             for c_line in fin_caption_lines:
                 fin_lines.append(f"  {c_line}")
             fin_lines.append("")
-            fin_lines.append(f"  {voice_badge}  {GREEN}● DONE{RESET}  PLAYBACK FINISHED ({time_str})")
+            fin_lines.append(done_timeline)
 
             output_fin = "\n".join([f"\r\033[K{line}" for line in fin_lines])
             sys.stderr.write(f"{output_fin}\n")
@@ -632,6 +665,8 @@ if __name__ == "__main__":
     hl_mode = "word"
     emphasis_val = os.environ.get("SPEAK_EMPHASIS", "bold").lower()
     view_val = os.environ.get("SPEAK_VIEW", "scroll").lower()
+    model_val = os.environ.get("SPEAK_MODEL", "")
+    tokens_val = os.environ.get("SPEAK_TOKENS", "")
     lead_val = 65
     mock = "--mock" in sys.argv
 
@@ -695,6 +730,16 @@ if __name__ == "__main__":
                 lead_val = max(0, int(arg.split("=", 1)[1]))
             except ValueError:
                 lead_val = 65
+        elif arg == "--model" and idx + 1 < len(sys.argv):
+            model_val = sys.argv[idx + 1]
+            skip_next = True
+        elif arg.startswith("--model="):
+            model_val = arg.split("=", 1)[1]
+        elif arg == "--tokens" and idx + 1 < len(sys.argv):
+            tokens_val = sys.argv[idx + 1]
+            skip_next = True
+        elif arg.startswith("--tokens="):
+            tokens_val = arg.split("=", 1)[1]
         elif arg.startswith("--"):
             continue
         elif name == "droid" and not transcript_arg:
@@ -702,4 +747,17 @@ if __name__ == "__main__":
         elif not transcript_arg:
             transcript_arg = arg
 
-    sys.exit(play_with_hud(wav, name, transcript=transcript_arg, num_lines=lines_val, highlight_mode=hl_mode, emphasis=emphasis_val, view_mode=view_val, mock_audio=mock))
+    sys.exit(
+        play_with_hud(
+            wav,
+            name,
+            transcript=transcript_arg,
+            num_lines=lines_val,
+            highlight_mode=hl_mode,
+            emphasis=emphasis_val,
+            view_mode=view_val,
+            mock_audio=mock,
+            model_info=model_val,
+            tokens_info=tokens_val,
+        )
+    )
