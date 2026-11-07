@@ -2664,15 +2664,20 @@ cmd_speak() {
 
   wait_for_keystroke_if_enabled() {
     [[ "$should_wait" == true && -t 2 && -r /dev/tty ]] || return 0
-    echo -ne "\r\033[K  ${YELLOW}⏸ READY${RESET} (${dur_display})  ${BOLD}Press any key to play${RESET} ${DIM}(q/Esc to skip)${RESET}" >&2
+    echo -ne "\r\033[K  ${YELLOW}⏸ READY${RESET} (${dur_display})  ${BOLD}[Space] play${RESET} ${DIM}· [q/Esc] skip${RESET}" >&2
     local key_ch=""
-    IFS= read -rsn1 key_ch < /dev/tty || true
+    while true; do
+      IFS= read -rsn1 key_ch < /dev/tty || break
+      if [[ "$key_ch" == " " || -z "$key_ch" ]]; then
+        break
+      elif [[ "$key_ch" == "q" || "$key_ch" == "Q" || "$key_ch" == $'\x1b' ]]; then
+        echo -ne "\r\033[K" >&2
+        echo -e "  ${DIM}○ skipped (${dur_display})${RESET}" >&2
+        print_bottom_timeline_summary
+        return 1
+      fi
+    done
     echo -ne "\r\033[K" >&2
-    if [[ "$key_ch" == "q" || "$key_ch" == "Q" || "$key_ch" == $'\x1b' ]]; then
-      echo -e "  ${DIM}○ skipped (${dur_display})${RESET}" >&2
-      print_bottom_timeline_summary
-      return 1
-    fi
     return 0
   }
 

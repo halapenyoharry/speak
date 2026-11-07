@@ -448,72 +448,143 @@ def play_with_hud(
     tot_m_init, tot_s_init = divmod(int(duration), 60)
     tot_str_init = f"{tot_m_init:02d}:{tot_s_init:02d}"
 
-    # Optional pre-playback keystroke gate (wait_for_key)
-    if wait_for_key and not mock_audio:
-        tty_f = None
+    resume_wav_path = f"{wav_path}.resume.wav"
+    player_cmd_base = None
+    if not mock_audio:
+        if subprocess.run(["which", "afplay"], capture_output=True).returncode == 0:
+            player_cmd_base = ["afplay"]
+        elif subprocess.run(["which", "paplay"], capture_output=True).returncode == 0:
+            player_cmd_base = ["paplay"]
+        elif subprocess.run(["which", "aplay"], capture_output=True).returncode == 0:
+            player_cmd_base = ["aplay", "-q"]
+        elif subprocess.run(["which", "mpv"], capture_output=True).returncode == 0:
+            player_cmd_base = ["mpv", "--no-video", "--really-quiet"]
+
+    def spawn_audio_player(offset_sec=0.0):
+        if mock_audio or not player_cmd_base:
+            return None
+        target_wav = wav_path
+        if offset_sec > 0.02 and duration > 0:
+            start_frame = max(0, min(nframes - 1, int(offset_sec * framerate)))
+            byte_offset = start_frame * nchannels * sampwidth
+            try:
+                with wave.open(resume_wav_path, "wb") as rwf:
+                    rwf.setnchannels(nchannels)
+                    rwf.setsampwidth(sampwidth)
+                    rwf.setframerate(framerate)
+                    rwf.writeframes(raw_bytes[byte_offset:])
+                target_wav = resume_wav_path
+            except Exception:
+                target_wav = wav_path
+        return subprocess.Popen(
+            player_cmd_base + [target_wav],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def stop_audio_player(p):
+        if p and p.poll() is None:
+            try:
+                p.terminate()
+                p.wait(timeout=0.3)
+            except Exception:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+
+    # Attach interactive TTY for Spacebar play/pause/resume and q/Esc skip/stop
+    import select
+    tty_f = None
+    tty_fd = None
+    old_tty_settings = None
+    try:
+        import termios
+        import tty
+
+        if os.isatty(0):
+            tty_fd = 0
+        else:
+            tty_f = open("/dev/tty", "rb+", buffering=0)
+            if os.isatty(tty_f.fileno()):
+                tty_fd = tty_f.fileno()
+    except Exception:
+        tty_fd = None
+
+    def restore_tty():
+        nonlocal old_tty_settings
+        if tty_fd is not None and old_tty_settings is not None:
+            try:
+                import termios
+                termios.tcsetattr(tty_fd, termios.TCSADRAIN, old_tty_settings)
+            except Exception:
+                pass
+            old_tty_settings = None
+        if tty_f is not None:
+            try:
+                tty_f.close()
+            except Exception:
+                pass
+        if os.path.exists(resume_wav_path):
+            try:
+                os.remove(resume_wav_path)
+            except Exception:
+                pass
+
+    # Optional pre-playback Spacebar gate (wait_for_key)
+    if wait_for_key and not mock_audio and tty_fd is not None:
         try:
             import termios
             import tty
 
-            if os.isatty(0):
-                tty_fd = 0
-            else:
-                tty_f = open("/dev/tty", "rb+", buffering=0)
-                tty_fd = tty_f.fileno()
+            sys.stderr.write(f"\033]0;READY: {clean_voice.upper()}\007")
+            sys.stderr.write("\033[?25l")
+            ready_meta = ""
+            if model_info:
+                ready_meta += f"  {DIM}model{RESET} {model_info}"
+            if tokens_info:
+                ready_meta += f"  {DIM}tokens{RESET} {tokens_info}"
+            sys.stderr.write(
+                f"\r\033[K  {voice_badge}  {BRIGHT_YELLOW}⏸ READY{RESET} ({tot_str_init})  "
+                f"{BOLD}[Space] play/pause{RESET} {DIM}· [q/Esc] skip{RESET}{ready_meta}"
+            )
+            sys.stderr.flush()
 
-            if os.isatty(tty_fd):
-                sys.stderr.write(f"\033]0;READY: {clean_voice.upper()}\007")
-                sys.stderr.write("\033[?25l")
-                ready_meta = ""
-                if model_info:
-                    ready_meta += f"  {DIM}model{RESET} {model_info}"
-                if tokens_info:
-                    ready_meta += f"  {DIM}tokens{RESET} {tokens_info}"
-                sys.stderr.write(
-                    f"\r\033[K  {voice_badge}  {BRIGHT_YELLOW}⏸ READY{RESET} ({tot_str_init})  "
-                    f"{BOLD}Press any key to play{RESET} {DIM}(q/Esc to skip){RESET}{ready_meta}"
-                )
-                sys.stderr.flush()
-
-                old_settings = termios.tcgetattr(tty_fd)
-                try:
-                    tty.setraw(tty_fd)
-                    ch = os.read(tty_fd, 1)
-                finally:
-                    termios.tcsetattr(tty_fd, termios.TCSADRAIN, old_settings)
-
-                sys.stderr.write("\r\033[K")
-                sys.stderr.flush()
-
+            old_tty_settings = termios.tcgetattr(tty_fd)
+            tty.setcbreak(tty_fd)
+            while True:
+                ch = os.read(tty_fd, 1)
+                if ch == b" ":
+                    break
                 if ch in (b"q", b"Q", b"\x1b", b"\x03"):
+                    restore_tty()
                     sys.stderr.write(
-                        f"  {voice_badge}  {DIM}○ SKIPPED ({tot_str_init}){RESET}{ready_meta}\n"
+                        f"\r\033[K  {voice_badge}  {DIM}○ SKIPPED ({tot_str_init}){RESET}{ready_meta}\n"
                         "\033[?25h\033]0;\007"
                     )
                     sys.stderr.flush()
                     return 0
+            sys.stderr.write("\r\033[K")
+            sys.stderr.flush()
         except Exception:
-            # If no interactive TTY is available, proceed directly to playback
-            pass
-        finally:
-            if tty_f is not None:
-                try:
-                    tty_f.close()
-                except Exception:
-                    pass
+            restore_tty()
 
-    player = None
-    if not mock_audio:
-        if subprocess.run(["which", "afplay"], capture_output=True).returncode == 0:
-            player = subprocess.Popen(["afplay", wav_path])
-        elif subprocess.run(["which", "paplay"], capture_output=True).returncode == 0:
-            player = subprocess.Popen(["paplay", wav_path])
-        elif subprocess.run(["which", "aplay"], capture_output=True).returncode == 0:
-            player = subprocess.Popen(["aplay", "-q", wav_path])
-        elif subprocess.run(["which", "mpv"], capture_output=True).returncode == 0:
-            player = subprocess.Popen(["mpv", "--no-video", "--really-quiet", wav_path])
+    # Keep TTY in cbreak mode during playback so Spacebar can pause/resume without pressing Enter
+    if not mock_audio and tty_fd is not None and old_tty_settings is None:
+        try:
+            import termios
+            import tty
+            old_tty_settings = termios.tcgetattr(tty_fd)
+            tty.setcbreak(tty_fd)
+        except Exception:
+            old_tty_settings = None
 
+    player = spawn_audio_player(0.0)
     start_time = time.monotonic()
+    is_paused = False
+    paused_at = 0.0
+    aborted = False
 
     # Set terminal tab title (clean, no emoji) and hide cursor
     sys.stderr.write(f"\033]0;VOICE: {clean_voice.upper()}\007")
@@ -526,8 +597,8 @@ def play_with_hud(
     total_refresh_lines = 4 if is_scroll_view else (1 + num_lines + 1 + 1)
 
     def cleanup_signal(signum, frame):
-        if player and player.poll() is None:
-            player.terminate()
+        stop_audio_player(player)
+        restore_tty()
         sys.stderr.write(f"\n\033[{total_refresh_lines}B\033[?25h\033]0;\007\n")
         sys.stderr.flush()
         sys.exit(0)
@@ -547,23 +618,61 @@ def play_with_hud(
 
     try:
         while True:
-            elapsed = time.monotonic() - start_time
-            if elapsed >= duration or (player and player.poll() is not None):
-                break
+            # Poll for Spacebar (pause/resume) or q/Esc/Ctrl-C (stop)
+            if not mock_audio and tty_fd is not None and old_tty_settings is not None:
+                try:
+                    rlist, _, _ = select.select([tty_fd], [], [], 0)
+                    if rlist:
+                        ch = os.read(tty_fd, 1)
+                        if ch == b" ":
+                            if not is_paused:
+                                paused_at = min(duration, max(0.0, time.monotonic() - start_time))
+                                stop_audio_player(player)
+                                player = None
+                                is_paused = True
+                                sys.stderr.write(f"\033]0;PAUSED: {clean_voice.upper()}\007")
+                            else:
+                                player = spawn_audio_player(paused_at)
+                                start_time = time.monotonic() - paused_at
+                                is_paused = False
+                                sys.stderr.write(f"\033]0;VOICE: {clean_voice.upper()}\007")
+                        elif ch in (b"q", b"Q", b"\x1b", b"\x03"):
+                            if is_paused:
+                                elapsed = paused_at
+                            else:
+                                elapsed = min(duration, max(0.0, time.monotonic() - start_time))
+                            stop_audio_player(player)
+                            player = None
+                            aborted = True
+                            break
+                except Exception:
+                    pass
+
+            if is_paused:
+                elapsed = paused_at
+            else:
+                elapsed = time.monotonic() - start_time
+                if elapsed >= duration or (player and player.poll() is not None):
+                    break
 
             ratio = min(1.0, elapsed / duration) if duration > 0 else 0
             chunk_idx = int(elapsed * fps)
-            cur_rms = rms_values[chunk_idx] if chunk_idx < len(rms_values) else 0.0
-            norm_rms = min(1.0, cur_rms / (max_rms * 0.85 + 1e-5))
-
-            smoothed_rms = max(norm_rms, smoothed_rms * 0.72)
-
-            if norm_rms > 0.05 or elapsed - last_talk_time < HOLD_TIME:
-                beacon = f"{GREEN}● PLAY{RESET}"
-                if norm_rms > 0.05:
-                    last_talk_time = elapsed
+            if is_paused:
+                cur_rms = 0.0
+                norm_rms = 0.0
+                smoothed_rms = 0.0
+                beacon = f"{BRIGHT_YELLOW}⏸ PAUSE{RESET}"
             else:
-                beacon = f"{DIM}○ IDLE{RESET}"
+                cur_rms = rms_values[chunk_idx] if chunk_idx < len(rms_values) else 0.0
+                norm_rms = min(1.0, cur_rms / (max_rms * 0.85 + 1e-5))
+                smoothed_rms = max(norm_rms, smoothed_rms * 0.72)
+
+                if norm_rms > 0.05 or elapsed - last_talk_time < HOLD_TIME:
+                    beacon = f"{GREEN}● PLAY{RESET}"
+                    if norm_rms > 0.05:
+                        last_talk_time = elapsed
+                else:
+                    beacon = f"{DIM}○ IDLE{RESET}"
 
             # Telemetry Line (Adaptive width for narrow terminal panes)
             meter_len = 10 if term_cols >= 65 else (8 if term_cols >= 50 else 6)
@@ -596,21 +705,27 @@ def play_with_hud(
             else:
                 time_str = f"{cur_m:02d}:{cur_s:02d}"
 
-            telem_content = f"  {voice_badge}  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
-            if model_info or tokens_info:
-                meta_parts_plain = []
-                meta_parts_ansi = []
-                if model_info:
-                    meta_parts_plain.append(f"model {model_info}")
-                    meta_parts_ansi.append(f"{DIM}model{RESET} {model_info}")
-                if tokens_info:
-                    meta_parts_plain.append(f"tokens {tokens_info}")
-                    meta_parts_ansi.append(f"{DIM}tokens{RESET} {tokens_info}")
-                # Estimate visible length of telem_content + meta to prevent line wrapping during 20fps cursor-up loop
-                base_vis_len = 2 + len(clean_voice) + 2 + 6 + 3 + meter_len + 3 + track_len + 6 + len(time_str)
-                meta_vis_len = 2 + len("  ".join(meta_parts_plain))
-                if base_vis_len + meta_vis_len < term_cols - 1:
-                    telem_content += "  " + "  ".join(meta_parts_ansi)
+            if is_paused:
+                telem_content = (
+                    f"  {voice_badge}  {beacon}  [{track}] {pct:2d}% {time_str}  "
+                    f"{BOLD}[Space] resume{RESET} {DIM}· [q] stop{RESET}"
+                )
+            else:
+                telem_content = f"  {voice_badge}  {beacon} [{meter_bar}]  [{track}] {pct:2d}% {time_str}"
+                if model_info or tokens_info:
+                    meta_parts_plain = []
+                    meta_parts_ansi = []
+                    if model_info:
+                        meta_parts_plain.append(f"model {model_info}")
+                        meta_parts_ansi.append(f"{DIM}model{RESET} {model_info}")
+                    if tokens_info:
+                        meta_parts_plain.append(f"tokens {tokens_info}")
+                        meta_parts_ansi.append(f"{DIM}tokens{RESET} {tokens_info}")
+                    # Estimate visible length of telem_content + meta to prevent line wrapping during 20fps cursor-up loop
+                    base_vis_len = 2 + len(clean_voice) + 2 + 6 + 3 + meter_len + 3 + track_len + 6 + len(time_str)
+                    meta_vis_len = 2 + len("  ".join(meta_parts_plain))
+                    if base_vis_len + meta_vis_len < term_cols - 1:
+                        telem_content += "  " + "  ".join(meta_parts_ansi)
 
             if is_scroll_view:
                 if line_groups:
@@ -662,10 +777,13 @@ def play_with_hud(
                 sys.stderr.write(f"\033[{total_refresh_lines - 1}A\r")
                 sys.stderr.flush()
 
-            target_time = start_time + (chunk_idx + 1) / fps
-            sleep_dur = target_time - time.monotonic()
-            if sleep_dur > 0:
-                time.sleep(sleep_dur)
+            if is_paused:
+                time.sleep(1.0 / fps)
+            else:
+                target_time = start_time + (chunk_idx + 1) / fps
+                sleep_dur = target_time - time.monotonic()
+                if sleep_dur > 0:
+                    time.sleep(sleep_dur)
 
         if player and player.poll() is None:
             player.wait()
@@ -674,25 +792,40 @@ def play_with_hud(
         tot_m, tot_s = divmod(int(duration), 60)
         time_str = f"{tot_m:02d}:{tot_s:02d}"
         done_track_len = 14 if term_cols >= 70 else (10 if term_cols >= 55 else 8)
-        done_track = f"{BRIGHT_CYAN}{'━' * done_track_len}{RESET}"
         done_meta = ""
         if model_info:
             done_meta += f"  {DIM}model{RESET} {model_info}"
         if tokens_info:
             done_meta += f"  {DIM}tokens{RESET} {tokens_info}"
-        done_timeline = f"  {voice_badge}  {GREEN}● DONE{RESET}  [{done_track}] 100% {time_str}{done_meta}"
+
+        if aborted:
+            cur_m, cur_s = divmod(int(elapsed), 60)
+            stop_ratio = min(1.0, elapsed / duration) if duration > 0 else 0
+            stop_filled = int(stop_ratio * done_track_len)
+            stop_track = (
+                BRIGHT_CYAN
+                + ("━" * stop_filled)
+                + DIM
+                + ("─" * max(0, done_track_len - stop_filled))
+                + RESET
+            )
+            done_timeline = f"  {voice_badge}  {DIM}○ STOPPED{RESET} [{stop_track}] {int(stop_ratio * 100):2d}% {cur_m:02d}:{cur_s:02d}/{time_str}{done_meta}"
+        else:
+            done_track = f"{BRIGHT_CYAN}{'━' * done_track_len}{RESET}"
+            done_timeline = f"  {voice_badge}  {GREEN}● DONE{RESET}  [{done_track}] 100% {time_str}{done_meta}"
 
         if is_scroll_view:
-            while printed_up_to < len(line_groups):
-                done_line = " ".join(line_groups[printed_up_to])
-                sys.stderr.write(f"\r\033[K  \033[38;2;0;190;205m{done_line}{RESET}\n")
-                printed_up_to += 1
+            if not aborted:
+                while printed_up_to < len(line_groups):
+                    done_line = " ".join(line_groups[printed_up_to])
+                    sys.stderr.write(f"\r\033[K  \033[38;2;0;190;205m{done_line}{RESET}\n")
+                    printed_up_to += 1
             sys.stderr.write(f"\r\033[K\n\r\033[K{done_timeline}\n")
             sys.stderr.flush()
         else:
             fin_lines = [""]
             fin_caption_lines = get_scrolling_caption_lines(
-                words, line_groups, word_timings, duration, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
+                words, line_groups, word_timings, elapsed if aborted else duration, duration, num_lines=num_lines, highlight_mode=highlight_mode, emphasis=emphasis
             )
             for c_line in fin_caption_lines:
                 fin_lines.append(f"  {c_line}")
@@ -704,6 +837,8 @@ def play_with_hud(
             sys.stderr.flush()
 
     finally:
+        stop_audio_player(player)
+        restore_tty()
         # Restore terminal cursor and clear title
         sys.stderr.write("\033[?25h")
         sys.stderr.write("\033]0;\007")
