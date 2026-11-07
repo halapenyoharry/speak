@@ -349,6 +349,7 @@ load_config() {
   CFG_OPTIMIZER_PROVIDER=""
   CFG_OPTIMIZER_MODEL=""
   CFG_DAEMON_PROMPT=""
+  CFG_WAIT_FOR_KEY="true"
   CFG_EMPHASIS=""
   CFG_VIEW=""
   # Per-engine model overrides stored as model_overrides.<engine>=<model>.
@@ -369,6 +370,7 @@ load_config() {
         optimizer_provider) CFG_OPTIMIZER_PROVIDER="$value" ;;
         optimizer_model) CFG_OPTIMIZER_MODEL="$value" ;;
         daemon_prompt|prompt_daemon) CFG_DAEMON_PROMPT="$value" ;;
+        wait_for_key|wait) CFG_WAIT_FOR_KEY="$value" ;;
         emphasis) CFG_EMPHASIS="$value" ;;
         view) CFG_VIEW="$value" ;;
         model_overrides.gemini) CFG_MODEL_OVERRIDE_gemini="$value" ;;
@@ -806,6 +808,8 @@ cmd_set() {
     echo -e "  optimizer_model    ${DIM}${OPTIMIZER_MODEL}${RESET}" >&2
     local dp="${CFG_DAEMON_PROMPT:-true}"
     echo -e "  daemon_prompt      ${DIM}${dp}${RESET}" >&2
+    local wfk="${CFG_WAIT_FOR_KEY:-true}"
+    echo -e "  wait_for_key       ${DIM}${wfk}${RESET}" >&2
     echo -e "  emphasis           ${DIM}${CFG_EMPHASIS:-bold}${RESET}" >&2
     echo -e "  view               ${DIM}${CFG_VIEW:-scroll}${RESET}" >&2
     local oe
@@ -910,9 +914,41 @@ cmd_set() {
           ;;
       esac
       ;;
+    wait_for_key|wait)
+      case "$(tolower "${value:-}")" in
+        true|yes|on|1)
+          save_config_value "wait_for_key" "true"
+          echo -e "${GREEN}✓${RESET} wait_for_key set to ${BOLD}true${RESET} (waits for keystroke before playing; override with -P / --play-now)" >&2
+          ;;
+        false|no|off|0)
+          save_config_value "wait_for_key" "false"
+          echo -e "${GREEN}✓${RESET} wait_for_key set to ${BOLD}false${RESET} (plays immediately after synthesis; override with -w / --wait)" >&2
+          ;;
+        *)
+          err "Invalid value for wait_for_key: '${value:-}'. Must be 'true' or 'false'"
+          exit 1
+          ;;
+      esac
+      ;;
+    autoplay)
+      case "$(tolower "${value:-}")" in
+        true|yes|on|1)
+          save_config_value "wait_for_key" "false"
+          echo -e "${GREEN}✓${RESET} wait_for_key set to ${BOLD}false${RESET} (autoplay enabled)" >&2
+          ;;
+        false|no|off|0)
+          save_config_value "wait_for_key" "true"
+          echo -e "${GREEN}✓${RESET} wait_for_key set to ${BOLD}true${RESET} (waits for keystroke before playing)" >&2
+          ;;
+        *)
+          err "Invalid value for autoplay: '${value:-}'. Must be 'true' or 'false'"
+          exit 1
+          ;;
+      esac
+      ;;
     *)
       err "Unknown config key: $key"
-      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_provider, optimizer_model, daemon_prompt, emphasis, view${RESET}" >&2
+      echo -e "${DIM}Valid keys: engine, persona, model, optimizer_provider, optimizer_model, daemon_prompt, wait_for_key, emphasis, view${RESET}" >&2
       exit 1
       ;;
   esac
@@ -1917,6 +1953,8 @@ $(echo -e "${BOLD}OPTIONS${RESET}")
     -v, --voice PERSONA           Persona name (case-insensitive)
     -r, --raw                     Skip narration optimization, send text directly
     -c, --clipboard               Read text from clipboard
+    -w, --wait                    Wait for a keystroke after synthesis before playing (default: on)
+    -P, --play-now, --no-wait     Play immediately after synthesis without waiting for a keystroke
     -Q, --queue                   Synthesize into the persistent queue without immediate terminal playback
     -o, --output FILE             Save .wav file instead of playing
     -q, --quiet                   Suppress narration transcript display
@@ -1949,6 +1987,9 @@ $(echo -e "${BOLD}EXAMPLES${RESET}")
     speak daemon status             Check local model memory residency and Web UI status
     speak set engine kokoro         Default to offline Kokoro TTS
     speak set persona Puck          Change default persona
+    speak set wait_for_key true     Wait for keystroke before playing (or false to autoplay)
+    speak -P "Play right away"      Override wait_for_key and play immediately when synthesized
+    speak -w "Wait for key"         Override wait_for_key and wait for a keystroke before playing
     speak set daemon_prompt false   Disable prompt to load daemon after standalone runs
     speak voices                    Personas for the active engine
     speak voices --all              Persona × engine coverage grid
@@ -2173,6 +2214,7 @@ cmd_speak() {
   local queue_mode=false
   local output=""
   local play=true
+  local wait_flag=""
   local quiet=false
   local lines_flag="3"
   local view_flag=""
@@ -2187,8 +2229,8 @@ cmd_speak() {
   # Parse options (clean-slate CLI surface). No -g/-k/-f/--no-gcloud;
   # mutual-exclusion guard deleted by construction (single engine value).
   while [[ $# -gt 0 ]]; do
-    # Expand combined short boolean flags (e.g., -rc -> -r -c)
-    if [[ "$1" =~ ^-[rcqQ]{2,}$ ]]; then
+    # Expand combined short boolean flags (e.g., -rc -> -r -c, -rP -> -r -P)
+    if [[ "$1" =~ ^-[rcqQwP]{2,}$ ]]; then
       local expanded=()
       for (( i=1; i<${#1}; i++ )); do
         expanded+=("-${1:$i:1}")
@@ -2204,6 +2246,8 @@ cmd_speak() {
       -v|--voice) persona_flag="$2"; shift 2 ;;
       -r|--raw) raw=true; shift ;;
       -c|--clipboard) clipboard=true; shift ;;
+      -w|--wait|--wait-for-key) wait_flag="true"; shift ;;
+      -P|--play-now|--no-wait|--autoplay) wait_flag="false"; shift ;;
       -Q|--queue) queue_mode=true; play=false; shift ;;
       -o|--output) output="$2"; play=false; shift 2 ;;
       -q|--quiet) quiet=true; shift ;;
@@ -2608,6 +2652,30 @@ cmd_speak() {
     will_use_visualizer=true
   fi
 
+  # Resolve wait_for_key: CLI flag (-w / -P) > SPEAK_WAIT_FOR_KEY env > config wait_for_key (default: true)
+  local effective_wait="${CFG_WAIT_FOR_KEY:-true}"
+  [[ -n "${SPEAK_WAIT_FOR_KEY:-}" ]] && effective_wait="$SPEAK_WAIT_FOR_KEY"
+  [[ -n "$wait_flag" ]] && effective_wait="$wait_flag"
+  local should_wait=false
+  case "$(tolower "$effective_wait")" in
+    true|yes|on|1) should_wait=true ;;
+    *)             should_wait=false ;;
+  esac
+
+  wait_for_keystroke_if_enabled() {
+    [[ "$should_wait" == true && -t 2 && -r /dev/tty ]] || return 0
+    echo -ne "\r\033[K  ${YELLOW}⏸ READY${RESET} (${dur_display})  ${BOLD}Press any key to play${RESET} ${DIM}(q/Esc to skip)${RESET}" >&2
+    local key_ch=""
+    IFS= read -rsn1 key_ch < /dev/tty || true
+    echo -ne "\r\033[K" >&2
+    if [[ "$key_ch" == "q" || "$key_ch" == "Q" || "$key_ch" == $'\x1b' ]]; then
+      echo -e "  ${DIM}○ skipped (${dur_display})${RESET}" >&2
+      print_bottom_timeline_summary
+      return 1
+    fi
+    return 0
+  }
+
   print_bottom_timeline_summary() {
     echo -ne "\r\033[K" >&2
     echo -ne "  ${GRAY}duration${RESET}  ${dur_display}" >&2
@@ -2649,39 +2717,45 @@ print(json.dumps(meta, indent=2))
 " "$badge_name" "${duration:-0}" "$is_raw" "$model_display" "$opt_tok" "$tts_tokens" "$escaped_transcript" "$wav_b64"
   elif [[ "$play" == true ]]; then
     if [[ -n "$show_mode" ]] && command -v ffplay &>/dev/null; then
-      local ff_showmode=1
-      local mode_label="waveform"
-      case "$show_mode" in
-        spec|spectrogram) ff_showmode=2; mode_label="spectrogram" ;;
-        wave|waveform)    ff_showmode=1; mode_label="waveform" ;;
-      esac
-      echo -e "  ${GREEN}▶${RESET} ${DIM}${mode_label}${RESET}" >&2
-      ffplay -autoexit -showmode "$ff_showmode" -window_title "speak: ${badge_name}" -loglevel quiet "$wav_file" 2>/dev/null
-      print_bottom_timeline_summary
+      if wait_for_keystroke_if_enabled; then
+        local ff_showmode=1
+        local mode_label="waveform"
+        case "$show_mode" in
+          spec|spectrogram) ff_showmode=2; mode_label="spectrogram" ;;
+          wave|waveform)    ff_showmode=1; mode_label="waveform" ;;
+        esac
+        echo -e "  ${GREEN}▶${RESET} ${DIM}${mode_label}${RESET}" >&2
+        ffplay -autoexit -showmode "$ff_showmode" -window_title "speak: ${badge_name}" -loglevel quiet "$wav_file" 2>/dev/null
+        print_bottom_timeline_summary
+      fi
     else
       if [[ "$will_use_visualizer" == true ]]; then
-        SPEAK_MODEL="$model_display" SPEAK_TOKENS="$tokens_display" "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "${persona:-$badge_name}" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-word}" --emphasis "${CFG_EMPHASIS:-bold}" --view "${view_flag:-${CFG_VIEW:-scroll}}" --model "$model_display" --tokens "$tokens_display"
+        local vis_wait_arg="--no-wait"
+        [[ "$should_wait" == true ]] && vis_wait_arg="--wait"
+        SPEAK_MODEL="$model_display" SPEAK_TOKENS="$tokens_display" SPEAK_WAIT_FOR_KEY="$should_wait" "$PYTHON" "${SCRIPT_DIR}/visualizer.py" "$wav_file" "${persona:-$badge_name}" "$transcript" --lines "${lines_flag:-3}" --highlight "${highlight_flag:-word}" --emphasis "${CFG_EMPHASIS:-bold}" --view "${view_flag:-${CFG_VIEW:-scroll}}" --model "$model_display" --tokens "$tokens_display" "$vis_wait_arg"
       else
-        echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
-        if command -v afplay &>/dev/null; then
-          afplay "$wav_file"
-        elif command -v paplay &>/dev/null; then
-          paplay "$wav_file"
-        elif command -v aplay &>/dev/null; then
-          aplay "$wav_file"
-        elif command -v mpv &>/dev/null; then
-          mpv --no-video --really-quiet "$wav_file"
-        else
-          echo "" >&2
-          err "No audio player found"
-          echo -e "  ${DIM}Saved to: ${wav_file}${RESET}" >&2
-          # Disarm cleanup so the user can recover the file.
-          trap - EXIT
-          exit 0
+        if wait_for_keystroke_if_enabled; then
+          echo -ne "  ${GREEN}▶${RESET} ${DIM}playing...${RESET}" >&2
+          if command -v afplay &>/dev/null; then
+            afplay "$wav_file"
+          elif command -v paplay &>/dev/null; then
+            paplay "$wav_file"
+          elif command -v aplay &>/dev/null; then
+            aplay "$wav_file"
+          elif command -v mpv &>/dev/null; then
+            mpv --no-video --really-quiet "$wav_file"
+          else
+            echo "" >&2
+            err "No audio player found"
+            echo -e "  ${DIM}Saved to: ${wav_file}${RESET}" >&2
+            # Disarm cleanup so the user can recover the file.
+            trap - EXIT
+            exit 0
+          fi
+          echo -ne "\r\033[K" >&2
+          echo -e "  ${GREEN}✓${RESET} ${DIM}done${RESET}" >&2
+          print_bottom_timeline_summary
         fi
-        echo -ne "\r\033[K" >&2
-        echo -e "  ${GREEN}✓${RESET} ${DIM}done${RESET}" >&2
-        print_bottom_timeline_summary
       fi
     fi
   else

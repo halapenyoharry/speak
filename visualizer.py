@@ -367,6 +367,7 @@ def play_with_hud(
     mock_audio=False,
     model_info="",
     tokens_info="",
+    wait_for_key=False,
 ):
     if not os.path.exists(wav_path):
         print(f"File not found: {wav_path}", file=sys.stderr)
@@ -437,6 +438,70 @@ def play_with_hud(
         raw_transcript=transcript,
     )
 
+    # Clean voice display name and color badge
+    clean_voice = voice_name
+    if clean_voice.lower().startswith("af_") or clean_voice.lower().startswith("am_"):
+        clean_voice = clean_voice[3:]
+    v_color = get_voice_color(clean_voice)
+    voice_badge = f"{BOLD}{v_color}{clean_voice.upper()}{RESET}"
+
+    tot_m_init, tot_s_init = divmod(int(duration), 60)
+    tot_str_init = f"{tot_m_init:02d}:{tot_s_init:02d}"
+
+    # Optional pre-playback keystroke gate (wait_for_key)
+    if wait_for_key and not mock_audio:
+        tty_f = None
+        try:
+            import termios
+            import tty
+
+            if os.isatty(0):
+                tty_fd = 0
+            else:
+                tty_f = open("/dev/tty", "rb+", buffering=0)
+                tty_fd = tty_f.fileno()
+
+            if os.isatty(tty_fd):
+                sys.stderr.write(f"\033]0;READY: {clean_voice.upper()}\007")
+                sys.stderr.write("\033[?25l")
+                ready_meta = ""
+                if model_info:
+                    ready_meta += f"  {DIM}model{RESET} {model_info}"
+                if tokens_info:
+                    ready_meta += f"  {DIM}tokens{RESET} {tokens_info}"
+                sys.stderr.write(
+                    f"\r\033[K  {voice_badge}  {BRIGHT_YELLOW}⏸ READY{RESET} ({tot_str_init})  "
+                    f"{BOLD}Press any key to play{RESET} {DIM}(q/Esc to skip){RESET}{ready_meta}"
+                )
+                sys.stderr.flush()
+
+                old_settings = termios.tcgetattr(tty_fd)
+                try:
+                    tty.setraw(tty_fd)
+                    ch = os.read(tty_fd, 1)
+                finally:
+                    termios.tcsetattr(tty_fd, termios.TCSADRAIN, old_settings)
+
+                sys.stderr.write("\r\033[K")
+                sys.stderr.flush()
+
+                if ch in (b"q", b"Q", b"\x1b", b"\x03"):
+                    sys.stderr.write(
+                        f"  {voice_badge}  {DIM}○ SKIPPED ({tot_str_init}){RESET}{ready_meta}\n"
+                        "\033[?25h\033]0;\007"
+                    )
+                    sys.stderr.flush()
+                    return 0
+        except Exception:
+            # If no interactive TTY is available, proceed directly to playback
+            pass
+        finally:
+            if tty_f is not None:
+                try:
+                    tty_f.close()
+                except Exception:
+                    pass
+
     player = None
     if not mock_audio:
         if subprocess.run(["which", "afplay"], capture_output=True).returncode == 0:
@@ -449,13 +514,6 @@ def play_with_hud(
             player = subprocess.Popen(["mpv", "--no-video", "--really-quiet", wav_path])
 
     start_time = time.monotonic()
-
-    # Clean voice display name and color badge
-    clean_voice = voice_name
-    if clean_voice.lower().startswith("af_") or clean_voice.lower().startswith("am_"):
-        clean_voice = clean_voice[3:]
-    v_color = get_voice_color(clean_voice)
-    voice_badge = f"{BOLD}{v_color}{clean_voice.upper()}{RESET}"
 
     # Set terminal tab title (clean, no emoji) and hide cursor
     sys.stderr.write(f"\033]0;VOICE: {clean_voice.upper()}\007")
@@ -667,6 +725,8 @@ if __name__ == "__main__":
     view_val = os.environ.get("SPEAK_VIEW", "scroll").lower()
     model_val = os.environ.get("SPEAK_MODEL", "")
     tokens_val = os.environ.get("SPEAK_TOKENS", "")
+    wait_env = os.environ.get("SPEAK_WAIT_FOR_KEY", "").lower()
+    wait_val = wait_env in ("true", "1", "yes", "on")
     lead_val = 65
     mock = "--mock" in sys.argv
 
@@ -740,6 +800,10 @@ if __name__ == "__main__":
             skip_next = True
         elif arg.startswith("--tokens="):
             tokens_val = arg.split("=", 1)[1]
+        elif arg in ("-w", "--wait", "--wait-for-key"):
+            wait_val = True
+        elif arg in ("-P", "--play-now", "--no-wait", "--autoplay"):
+            wait_val = False
         elif arg.startswith("--"):
             continue
         elif name == "droid" and not transcript_arg:
@@ -759,5 +823,6 @@ if __name__ == "__main__":
             mock_audio=mock,
             model_info=model_val,
             tokens_info=tokens_val,
+            wait_for_key=wait_val,
         )
     )
